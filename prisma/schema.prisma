@@ -1,0 +1,267 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleName {
+  student
+  staff
+  admin
+  warden
+  lab_incharge
+}
+
+enum RiskLevel {
+  low
+  medium
+  high
+}
+
+enum WorkflowStepStatus {
+  pending
+  executing
+  done
+  awaiting_approval
+  failed
+  rejected
+  info_requested
+}
+
+enum ApprovalDecision {
+  approved
+  rejected
+  info_requested
+}
+
+model User {
+  id                 String         @id @default(uuid()) @db.Uuid
+  name               String
+  email              String         @unique
+  passwordHash       String         @map("password_hash")
+  role               RoleName
+  departmentId       String         @map("department_id") @db.Uuid
+  preferredLanguage  String         @default("en") @map("preferred_language")
+  notificationPrefs  Json           @default("{}") @map("notification_prefs")
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  sessions           AgentSession[]
+  requests           ServiceRequest[]
+  notifications      Notification[]
+
+  @@map("users")
+}
+
+model RequestType {
+  id               String           @id @default(uuid()) @db.Uuid
+  name             String           @unique
+  defaultRiskLevel RiskLevel        @map("default_risk_level")
+  defaultSlaHours  Int              @default(72) @map("default_sla_hours")
+  requests         ServiceRequest[]
+
+  @@map("request_types")
+}
+
+model ServiceRequest {
+  id             String         @id @default(uuid()) @db.Uuid
+  userId         String         @map("user_id") @db.Uuid
+  sessionId      String?        @map("session_id") @db.Uuid
+  requestTypeId  String         @map("request_type_id") @db.Uuid
+  departmentId   String?        @map("department_id") @db.Uuid
+  status         String         @default("pending")
+  description    String
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  slaDueAt       DateTime       @map("sla_due_at") @db.Timestamptz
+  resolvedAt     DateTime?      @map("resolved_at") @db.Timestamptz
+  user           User           @relation(fields: [userId], references: [id])
+  session        AgentSession?  @relation(fields: [sessionId], references: [id])
+  requestType    RequestType    @relation(fields: [requestTypeId], references: [id])
+  workflowSteps  WorkflowStep[]
+
+  @@index([userId, status])
+  @@index([slaDueAt])
+  @@map("service_requests")
+}
+
+model WorkflowStep {
+  id             String             @id @default(uuid()) @db.Uuid
+  requestId      String             @map("request_id") @db.Uuid
+  sessionId      String             @map("session_id") @db.Uuid
+  stepName       String             @map("step_name")
+  toolName       String             @map("tool_name")
+  toolArgs       Json               @map("tool_args")
+  rationale      String
+  riskLevel      RiskLevel          @map("risk_level")
+  status         WorkflowStepStatus @default(pending)
+  idempotencyKey String             @unique @map("idempotency_key")
+  resultJson     Json?              @map("result_json")
+  executedAt     DateTime?          @map("executed_at") @db.Timestamptz
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  request        ServiceRequest     @relation(fields: [requestId], references: [id])
+  session        AgentSession       @relation(fields: [sessionId], references: [id])
+  approvals      Approval[]
+
+  @@index([requestId])
+  @@index([sessionId])
+  @@map("workflow_steps")
+}
+
+model Approval {
+  id             String            @id @default(uuid()) @db.Uuid
+  workflowStepId String            @map("workflow_step_id") @db.Uuid
+  reviewerId     String?           @map("reviewer_id") @db.Uuid
+  decision       ApprovalDecision?
+  reason         String?
+  question       String?
+  contextJson    Json              @default("{}") @map("context_json")
+  decidedAt      DateTime?         @map("decided_at") @db.Timestamptz
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  workflowStep   WorkflowStep      @relation(fields: [workflowStepId], references: [id])
+
+  @@index([decision])
+  @@map("approvals")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id") @db.Uuid
+  action      String
+  actor       String
+  payloadJson Json     @map("payload_json")
+  prevHash    String   @map("prev_hash")
+  entryHash   String   @map("entry_hash")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+model KnowledgeDocument {
+  id             String          @id @default(uuid()) @db.Uuid
+  title          String
+  documentId     String          @map("document_id")
+  version        String
+  uploadedBy     String          @map("uploaded_by") @db.Uuid
+  fileUrl        String?         @map("file_url")
+  status         String          @default("active")
+  effectiveDate  DateTime?       @map("effective_date") @db.Date
+  chunks         DocumentChunk[]
+
+  @@unique([documentId, version])
+  @@map("knowledge_documents")
+}
+
+model DocumentChunk {
+  id          String            @id @default(uuid()) @db.Uuid
+  documentId  String            @map("document_id") @db.Uuid
+  content     String
+  embedding   Unsupported("vector")?
+  sourcePage  Int?              @map("source_page")
+  clause      String?
+  document    KnowledgeDocument @relation(fields: [documentId], references: [id])
+
+  @@map("document_chunks")
+}
+
+model AgentSession {
+  id          String           @id @default(uuid()) @db.Uuid
+  userId      String           @map("user_id") @db.Uuid
+  startedAt   DateTime         @default(now()) @map("started_at") @db.Timestamptz
+  language    String           @default("en")
+  stateJson   Json?            @map("state_json")
+  user        User             @relation(fields: [userId], references: [id])
+  messages    AgentMessage[]
+  requests    ServiceRequest[]
+  steps       WorkflowStep[]
+
+  @@index([userId])
+  @@map("agent_sessions")
+}
+
+model AgentMessage {
+  id              String       @id @default(uuid()) @db.Uuid
+  sessionId       String       @map("session_id") @db.Uuid
+  sender          String
+  content         String
+  confidenceScore Float?       @map("confidence_score")
+  citedChunkIds   String[]     @map("cited_chunk_ids")
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  session         AgentSession @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId, createdAt])
+  @@map("agent_messages")
+}
+
+model PolicyConflictFlag {
+  id          String   @id @default(uuid()) @db.Uuid
+  docAId      String   @map("doc_a_id") @db.Uuid
+  docAClause  String?  @map("doc_a_clause")
+  docAVersion String   @map("doc_a_version")
+  docBId      String   @map("doc_b_id") @db.Uuid
+  docBClause  String?  @map("doc_b_clause")
+  docBVersion String   @map("doc_b_version")
+  raisedAt    DateTime @default(now()) @map("raised_at") @db.Timestamptz
+  status      String   @default("open")
+
+  @@map("policy_conflict_flags")
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  title     String
+  body      String
+  readFlag  Boolean  @default(false) @map("read_flag")
+  deepLink  String?  @map("deep_link")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, readFlag])
+  @@map("notifications")
+}
+
+model LabResource {
+  id           String       @id @default(uuid()) @db.Uuid
+  name         String
+  departmentId String       @map("department_id") @db.Uuid
+  capacity     Int
+  restrictions String?
+  bookings     LabBooking[]
+
+  @@map("lab_resources")
+}
+
+model LabBooking {
+  id         String      @id @default(uuid()) @db.Uuid
+  resourceId String      @map("resource_id") @db.Uuid
+  userId     String      @map("user_id") @db.Uuid
+  startTime  DateTime    @map("start_time") @db.Timestamptz
+  endTime    DateTime    @map("end_time") @db.Timestamptz
+  status     String      @default("confirmed")
+  courseCode String?     @map("course_code")
+  facultyRef String?     @map("faculty_ref")
+  resource   LabResource @relation(fields: [resourceId], references: [id])
+
+  @@index([resourceId, startTime])
+  @@map("lab_bookings")
+}
+
+model Grievance {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String?  @map("user_id") @db.Uuid
+  ownerUserId     String   @map("owner_user_id") @db.Uuid
+  category        String
+  description     String
+  anonymous       Boolean  @default(false)
+  status          String   @default("open")
+  escalationLevel Int      @default(1) @map("escalation_level")
+  slaDueAt        DateTime @map("sla_due_at") @db.Timestamptz
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([ownerUserId])
+  @@index([status, escalationLevel])
+  @@map("grievances")
+}
