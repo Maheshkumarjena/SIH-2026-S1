@@ -40,6 +40,43 @@ export class GuardrailService {
     }));
   }
 
+  validateCitationSupport(answer: string, citedChunkIds: string[], retrievedChunks: ChunkResult[]): GuardrailFlag[] {
+    const flags = this.validateCitations(citedChunkIds, retrievedChunks);
+    const factualTerms = this.significantTerms(answer);
+    if (factualTerms.length < 3) {
+      return flags;
+    }
+    if (citedChunkIds.length === 0) {
+      return [
+        ...flags,
+        {
+          type: 'unsupported_claim',
+          severity: 'medium',
+          target: 'final_response',
+          message: 'Factual answer did not include citations',
+        },
+      ];
+    }
+
+    const citedText = retrievedChunks
+      .filter((chunk) => citedChunkIds.includes(chunk.chunk_id))
+      .map((chunk) => chunk.content)
+      .join(' ');
+    const citedTerms = new Set(this.significantTerms(citedText));
+    const supportedTerms = factualTerms.filter((term) => citedTerms.has(term));
+    const supportScore = supportedTerms.length / Math.max(1, factualTerms.length);
+    if (supportScore < 0.35) {
+      flags.push({
+        type: 'unsupported_claim',
+        severity: 'medium',
+        target: 'final_response',
+        message: 'Cited evidence does not sufficiently support the answer',
+        metadata: { support_score: Number(supportScore.toFixed(3)) },
+      });
+    }
+    return flags;
+  }
+
   minimizeToolArgs(toolName: string, args: Record<string, unknown>): Record<string, unknown> {
     const allowlists: Record<string, string[]> = {
       create_request: ['request_type', 'description', 'department_id', 'session_id'],
@@ -100,5 +137,33 @@ export class GuardrailService {
         target,
         message: `Potential prompt injection matched ${pattern.source}`,
       }));
+  }
+
+  private significantTerms(text: string): string[] {
+    const stopwords = new Set([
+      'the',
+      'and',
+      'for',
+      'your',
+      'you',
+      'this',
+      'that',
+      'with',
+      'from',
+      'have',
+      'been',
+      'done',
+      'request',
+      'completed',
+    ]);
+    return [
+      ...new Set(
+        text
+          .toLowerCase()
+          .replace(/[^a-z0-9\u0900-\u097F\u0B00-\u0B7F ]/g, ' ')
+          .split(/\s+/)
+          .filter((term) => term.length > 2 && !stopwords.has(term)),
+      ),
+    ];
   }
 }

@@ -25,6 +25,21 @@ describe('GuardrailService', () => {
     expect(flags[0].type).toBe('invalid_citation');
   });
 
+  it('detects unsupported cited answers', () => {
+    const flags = service.validateCitationSupport('The hostel refund deadline is seven days.', ['known'], [
+      {
+        chunk_id: 'known',
+        content: 'Bonafide certificates need staff approval.',
+        source_document: 'ACAD-CERT-001',
+        document_version: '2',
+        page: 1,
+        clause: '4.1',
+        similarity: 0.9,
+      },
+    ]);
+    expect(flags.some((flag) => flag.type === 'unsupported_claim')).toBe(true);
+  });
+
   it('strips non-allowlisted tool args', () => {
     expect(
       service.minimizeToolArgs('issue_certificate', {

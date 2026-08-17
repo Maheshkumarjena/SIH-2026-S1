@@ -1,4 +1,5 @@
 const { PrismaClient, RiskLevel, RoleName } = require('@prisma/client');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -68,6 +69,12 @@ function localEmbedding(input) {
   return vector.map((value) => Number((value / norm).toFixed(6)));
 }
 
+function passwordHash(password) {
+  const salt = 'demo-seed-salt';
+  const derived = crypto.scryptSync(password, salt, 64);
+  return `scrypt:${salt}:${derived.toString('hex')}`;
+}
+
 async function seedUsers() {
   const users = [
     { id: ids.admin, name: 'Admin User', email: 'admin@soa.demo', role: RoleName.admin, departmentId: ids.academicDept },
@@ -77,8 +84,8 @@ async function seedUsers() {
   for (const user of users) {
     await prisma.user.upsert({
       where: { id: user.id },
-      update: user,
-      create: { ...user, passwordHash: 'seeded-demo-only', preferredLanguage: 'en' },
+      update: { ...user, passwordHash: passwordHash('Password123!') },
+      create: { ...user, passwordHash: passwordHash('Password123!'), preferredLanguage: 'en' },
     });
   }
 }

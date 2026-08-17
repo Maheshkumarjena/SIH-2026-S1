@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../common/current-user.decorator';
 import { MockJwtAuthGuard } from '../common/guards/mock-jwt-auth.guard';
+import { Roles } from '../common/roles.decorator';
 import { AuthenticatedUser } from '../common/types';
 import { CreateRequestDto, UpdateRequestStatusDto } from './dto';
 import { RequestsService } from './requests.service';
@@ -26,6 +27,7 @@ export class RequestsController {
   }
 
   @Patch(':id/status')
+  @Roles('staff', 'admin', 'warden', 'lab_incharge')
   updateStatus(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateRequestStatusDto) {
     return this.requests.updateStatus(id, user, dto.status);
   }

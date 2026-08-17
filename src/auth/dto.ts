@@ -33,6 +33,21 @@ export class LoginDto {
   password!: string;
 }
 
+export class RefreshTokenDto {
+  @IsOptional()
+  @IsString()
+  refresh_token?: string;
+}
+
+export class LogoutDto {
+  @IsOptional()
+  @IsString()
+  refresh_token?: string;
+
+  @IsOptional()
+  all_devices?: boolean;
+}
+
 export class UpdateMeDto {
   @IsOptional()
   @IsIn(['en', 'hi', 'or'])

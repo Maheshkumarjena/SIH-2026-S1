@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../common/current-user.decorator';
 import { MockJwtAuthGuard } from '../common/guards/mock-jwt-auth.guard';
+import { Roles } from '../common/roles.decorator';
 import { AuthenticatedUser } from '../common/types';
 import { FileGrievanceDto } from './dto';
 import { GrievancesService } from './grievances.service';
@@ -26,6 +27,7 @@ export class GrievancesController {
   }
 
   @Post(':id/escalate')
+  @Roles('staff', 'admin', 'warden')
   escalate(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<unknown> {
     return this.grievances.escalate(id, user);
   }

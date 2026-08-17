@@ -1,8 +1,10 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { MockJwtAuthGuard } from '../common/guards/mock-jwt-auth.guard';
+import { Roles } from '../common/roles.decorator';
 import { AuditService } from './audit.service';
 
 @UseGuards(MockJwtAuthGuard)
+@Roles('admin')
 @Controller('audit')
 export class AuditController {
   constructor(private readonly audit: AuditService) {}

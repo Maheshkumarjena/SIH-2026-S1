@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
+import { CertificatesModule } from '../certificates/certificates.module';
 import { GrievancesModule } from '../grievances/grievances.module';
 import { LabBookingsModule } from '../lab-bookings/lab-bookings.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -8,7 +9,7 @@ import { ToolExecutionService } from './tool-execution.service';
 import { ToolRegistryService } from './tool-registry.service';
 
 @Module({
-  imports: [AuditModule, RequestsModule, NotificationsModule, LabBookingsModule, GrievancesModule],
+  imports: [AuditModule, CertificatesModule, RequestsModule, NotificationsModule, LabBookingsModule, GrievancesModule],
   providers: [ToolRegistryService, ToolExecutionService],
   exports: [ToolRegistryService, ToolExecutionService],
 })

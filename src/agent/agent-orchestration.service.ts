@@ -312,12 +312,12 @@ export class AgentOrchestrationService {
 
   private async notifyUser(state: AgentState): Promise<void> {
     const citedChunkIds = state.retrieved_chunks.slice(0, 3).map((chunk) => chunk.chunk_id);
-    const citationFlags = this.guardrails.validateCitations(citedChunkIds, state.retrieved_chunks);
+    const content = `Done. I completed the low-risk steps for your ${state.intent.replace('_', ' ')} request.`;
+    const citationFlags = this.guardrails.validateCitationSupport(content, citedChunkIds, state.retrieved_chunks);
     if (citationFlags.length > 0) {
       await this.completeMessage(state, "I'm not certain - let me check with staff.", []);
       return;
     }
-    const content = `Done. I completed the low-risk steps for your ${state.intent.replace('_', ' ')} request.`;
     await this.completeMessage(state, content, citedChunkIds);
     await this.audit.append('agent_sessions', state.session_id, 'N16.final_notification', 'agent', {
       citations: citedChunkIds,

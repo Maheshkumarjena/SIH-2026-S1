@@ -1,13 +1,18 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
+import { ROLES_KEY } from '../roles.decorator';
 import { AuthenticatedUser, Role, SupportedLanguage } from '../types';
 
 @Injectable()
 export class MockJwtAuthGuard implements CanActivate {
   private readonly jwt: JwtService;
 
-  constructor(config: ConfigService) {
+  constructor(
+    config: ConfigService,
+    private readonly reflector: Reflector,
+  ) {
     this.jwt = new JwtService({ secret: config.get<string>('JWT_SECRET') ?? 'dev-secret-change-me' });
   }
 
@@ -33,6 +38,7 @@ export class MockJwtAuthGuard implements CanActivate {
           department_id: payload.department_id,
           preferred_language: payload.preferred_language ?? 'en',
         };
+        this.assertRoleAllowed(context, request.user);
         return true;
       } catch {
         throw new UnauthorizedException({ code: 'UNAUTHORIZED', message: 'Invalid or expired access token' });
@@ -54,7 +60,15 @@ export class MockJwtAuthGuard implements CanActivate {
       department_id: departmentId,
       preferred_language: language ?? 'en',
     };
+    this.assertRoleAllowed(context, request.user);
     return true;
+  }
+
+  private assertRoleAllowed(context: ExecutionContext, user: AuthenticatedUser): void {
+    const roles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [context.getHandler(), context.getClass()]);
+    if (roles?.length && !roles.includes(user.role)) {
+      throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Role is not allowed for this route' });
+    }
   }
 
   private extractToken(headers: Record<string, string | undefined>, cookies?: Record<string, string | undefined>): string | null {

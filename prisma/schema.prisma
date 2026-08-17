@@ -50,8 +50,25 @@ model User {
   sessions           AgentSession[]
   requests           ServiceRequest[]
   notifications      Notification[]
+  refreshTokens      RefreshToken[]
+  certificates       Certificate[]
 
   @@map("users")
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  tokenHash    String    @map("token_hash")
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  user         User      @relation(fields: [userId], references: [id])
+
+  @@unique([tokenHash])
+  @@index([userId, revokedAt])
+  @@map("refresh_tokens")
 }
 
 model RequestType {
@@ -79,10 +96,32 @@ model ServiceRequest {
   session        AgentSession?  @relation(fields: [sessionId], references: [id])
   requestType    RequestType    @relation(fields: [requestTypeId], references: [id])
   workflowSteps  WorkflowStep[]
+  certificates   Certificate[]
 
   @@index([userId, status])
   @@index([slaDueAt])
   @@map("service_requests")
+}
+
+model Certificate {
+  id               String         @id @default(uuid()) @db.Uuid
+  requestId        String         @map("request_id") @db.Uuid
+  userId           String         @map("user_id") @db.Uuid
+  certificateType  String         @map("certificate_type")
+  purpose          String
+  status           String         @default("issued")
+  serialNumber     String         @unique @map("serial_number")
+  verificationCode String         @unique @map("verification_code")
+  signedPayload    Json           @map("signed_payload")
+  signature        String
+  issuedBy         String         @map("issued_by") @db.Uuid
+  issuedAt         DateTime       @default(now()) @map("issued_at") @db.Timestamptz
+  request          ServiceRequest @relation(fields: [requestId], references: [id])
+  user             User           @relation(fields: [userId], references: [id])
+
+  @@index([requestId])
+  @@index([userId])
+  @@map("certificates")
 }
 
 model WorkflowStep {

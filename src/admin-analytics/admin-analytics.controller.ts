@@ -1,8 +1,10 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { MockJwtAuthGuard } from '../common/guards/mock-jwt-auth.guard';
+import { Roles } from '../common/roles.decorator';
 import { AdminAnalyticsService } from './admin-analytics.service';
 
 @UseGuards(MockJwtAuthGuard)
+@Roles('admin')
 @Controller('admin/analytics')
 export class AdminAnalyticsController {
   constructor(private readonly analytics: AdminAnalyticsService) {}

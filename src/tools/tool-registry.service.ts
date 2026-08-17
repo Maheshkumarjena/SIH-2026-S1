@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { randomUUID } from 'crypto';
 import { AgentTool, ToolExecutionContext } from './tool.types';
+import { CertificateService } from '../certificates/certificate.service';
 import { RequestsService } from '../requests/requests.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LabBookingsService } from '../lab-bookings/lab-bookings.service';
@@ -15,6 +15,7 @@ export class ToolRegistryService {
     private readonly notifications: NotificationsService,
     private readonly labBookings: LabBookingsService,
     private readonly grievances: GrievancesService,
+    private readonly certificates: CertificateService,
   ) {
     const roles = ['student', 'staff', 'admin', 'warden', 'lab_incharge'] as const;
     const definitions: AgentTool[] = [
@@ -99,7 +100,13 @@ export class ToolRegistryService {
           riskLevel: 'high',
           inputSchema: this.objectSchema(['request_id', 'certificate_type', 'purpose']),
           allowedRoles: ['staff', 'admin'],
-          execute: async (args: Record<string, unknown>) => ({ issued: true, certificate_ref: randomUUID(), request_id: args.request_id }),
+          execute: async (args: Record<string, unknown>, context: ToolExecutionContext) =>
+            this.certificates.issue({
+              request_id: String(args.request_id),
+              certificate_type: String(args.certificate_type),
+              purpose: String(args.purpose),
+              issued_by: context.user.id,
+            }),
         },
       ];
     this.tools = new Map(definitions.map((tool) => [tool.name, tool]));

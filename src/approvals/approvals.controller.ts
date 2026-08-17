@@ -1,11 +1,13 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../common/current-user.decorator';
 import { MockJwtAuthGuard } from '../common/guards/mock-jwt-auth.guard';
+import { Roles } from '../common/roles.decorator';
 import { AuthenticatedUser } from '../common/types';
 import { ApprovalsService } from './approvals.service';
 import { RejectApprovalDto, RequestInfoDto } from './dto';
 
 @UseGuards(MockJwtAuthGuard)
+@Roles('staff', 'admin', 'warden', 'lab_incharge')
 @Controller('approvals')
 export class ApprovalsController {
   constructor(private readonly approvals: ApprovalsService) {}

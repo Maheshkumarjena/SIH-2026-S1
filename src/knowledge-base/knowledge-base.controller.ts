@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../common/current-user.decorator';
 import { MockJwtAuthGuard } from '../common/guards/mock-jwt-auth.guard';
+import { Roles } from '../common/roles.decorator';
 import { AuthenticatedUser } from '../common/types';
 import { SearchKnowledgeBaseDto, UpsertKnowledgeDocumentDto } from './dto';
 import { KnowledgeBaseService } from './knowledge-base.service';
@@ -20,6 +21,7 @@ export class KnowledgeBaseController {
   }
 
   @Post('documents')
+  @Roles('staff', 'admin')
   upsert(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpsertKnowledgeDocumentDto) {
     return this.kb.upsertDocument({
       title: dto.title,
