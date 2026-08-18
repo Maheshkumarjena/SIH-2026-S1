@@ -12,23 +12,35 @@ export class GrievancesController {
   constructor(private readonly grievances: GrievancesService) {}
 
   @Post()
-  file(@CurrentUser() user: AuthenticatedUser, @Body() dto: FileGrievanceDto): Promise<unknown> {
-    return this.grievances.file(user, dto);
+  async file(@CurrentUser() user: AuthenticatedUser, @Body() dto: FileGrievanceDto): Promise<unknown> {
+    console.log(`[GrievancesController.file] 📢 User ${user.id} (${user.role}) filing grievance (Category: ${dto.category}, Anonymous: ${dto.anonymous})`);
+    const result = await this.grievances.file(user, dto);
+    console.log(`[GrievancesController.file] ✅ Grievance filed successfully:`, (result as { id?: string })?.id ?? 'done');
+    return result;
   }
 
   @Get()
-  list(@CurrentUser() user: AuthenticatedUser, @Query() filters: Record<string, string | undefined>): Promise<unknown> {
-    return this.grievances.list(user, filters);
+  async list(@CurrentUser() user: AuthenticatedUser, @Query() filters: Record<string, string | undefined>): Promise<unknown> {
+    console.log(`[GrievancesController.list] 📋 User ${user.id} (${user.role}) listing grievances with filters:`, filters);
+    const result = await this.grievances.list(user, filters);
+    console.log(`[GrievancesController.list] ✅ Returned ${(result as { items?: unknown[] })?.items?.length ?? 0} grievances`);
+    return result;
   }
 
   @Get(':id')
-  getDetail(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<unknown> {
-    return this.grievances.getDetail(id, user);
+  async getDetail(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<unknown> {
+    console.log(`[GrievancesController.getDetail] 🔍 User ${user.id} (${user.role}) fetching grievance details: ${id}`);
+    const result = await this.grievances.getDetail(id, user);
+    console.log(`[GrievancesController.getDetail] ✅ Fetched grievance details: ${id}`);
+    return result;
   }
 
   @Post(':id/escalate')
   @Roles('staff', 'admin', 'warden')
-  escalate(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<unknown> {
-    return this.grievances.escalate(id, user);
+  async escalate(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<unknown> {
+    console.log(`[GrievancesController.escalate] ⚡ User ${user.id} (${user.role}) escalating grievance: ${id}`);
+    const result = await this.grievances.escalate(id, user);
+    console.log(`[GrievancesController.escalate] ✅ Grievance ${id} escalated successfully`);
+    return result;
   }
 }

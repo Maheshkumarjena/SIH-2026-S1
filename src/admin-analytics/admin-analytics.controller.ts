@@ -10,22 +10,34 @@ export class AdminAnalyticsController {
   constructor(private readonly analytics: AdminAnalyticsService) {}
 
   @Get('requests-summary')
-  requestsSummary() {
-    return this.analytics.requestsSummary();
+  async requestsSummary() {
+    console.log(`[AdminAnalyticsController.requestsSummary] 📊 Fetching requests summary analytics`);
+    const result = await this.analytics.requestsSummary();
+    console.log(`[AdminAnalyticsController.requestsSummary] ✅ Requests summary generated`);
+    return result;
   }
 
   @Get('resolution-time')
-  resolutionTimeTrend() {
-    return this.analytics.resolutionTimeTrend();
+  async resolutionTimeTrend() {
+    console.log(`[AdminAnalyticsController.resolutionTimeTrend] 📈 Fetching resolution time trend`);
+    const result = await this.analytics.resolutionTimeTrend();
+    console.log(`[AdminAnalyticsController.resolutionTimeTrend] ✅ Resolution time trend generated`);
+    return result;
   }
 
   @Get('bottlenecks')
-  bottlenecks() {
-    return this.analytics.bottlenecks();
+  async bottlenecks() {
+    console.log(`[AdminAnalyticsController.bottlenecks] ⏳ Fetching approval bottleneck analytics`);
+    const result = await this.analytics.bottlenecks();
+    console.log(`[AdminAnalyticsController.bottlenecks] ✅ Bottlenecks analytics generated`);
+    return result;
   }
 
   @Get('policy-conflicts')
-  policyConflicts() {
-    return this.analytics.policyConflicts();
+  async policyConflicts() {
+    console.log(`[AdminAnalyticsController.policyConflicts] ⚠️ Fetching policy conflicts analytics`);
+    const result = await this.analytics.policyConflicts();
+    console.log(`[AdminAnalyticsController.policyConflicts] ✅ Policy conflicts analytics generated`);
+    return result;
   }
 }

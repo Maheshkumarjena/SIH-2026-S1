@@ -16,14 +16,18 @@ export class KnowledgeBaseController {
   ) {}
 
   @Get('documents')
-  list() {
-    return this.kb.list();
+  async list() {
+    console.log(`[KnowledgeBaseController.list] 📚 Listing all knowledge base documents`);
+    const result = await this.kb.list();
+    console.log(`[KnowledgeBaseController.list] ✅ Returned ${result?.items?.length ?? 0} documents`);
+    return result;
   }
 
   @Post('documents')
   @Roles('staff', 'admin')
-  upsert(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpsertKnowledgeDocumentDto) {
-    return this.kb.upsertDocument({
+  async upsert(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpsertKnowledgeDocumentDto) {
+    console.log(`[KnowledgeBaseController.upsert] 📄 User ${user.id} (${user.role}) upserting KB document: "${dto.title}" (doc_id: ${dto.document_id}, v: ${dto.version})`);
+    const result = await this.kb.upsertDocument({
       title: dto.title,
       document_id: dto.document_id,
       version: dto.version,
@@ -31,11 +35,15 @@ export class KnowledgeBaseController {
       uploaded_by: user.id,
       effective_date: dto.effective_date,
     });
+    console.log(`[KnowledgeBaseController.upsert] ✅ Document upserted successfully`);
+    return result;
   }
 
   @Post('search')
   async search(@Body() dto: SearchKnowledgeBaseDto) {
+    console.log(`[KnowledgeBaseController.search] 🔍 Searching KB for query: "${dto.query}" (top_k: ${dto.top_k ?? 8})`);
     const chunks = await this.retrieval.search(dto.query, dto.top_k ?? 8);
+    console.log(`[KnowledgeBaseController.search] ✅ Retrieved ${chunks.length} chunks`);
     return { chunks };
   }
 }

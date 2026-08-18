@@ -11,22 +11,34 @@ export class LabBookingsController {
   constructor(private readonly labBookings: LabBookingsService) {}
 
   @Get('lab-resources')
-  listResources(): Promise<unknown> {
-    return this.labBookings.listResources();
+  async listResources(): Promise<unknown> {
+    console.log(`[LabBookingsController.listResources] 🔬 Listing all lab resources`);
+    const result = await this.labBookings.listResources();
+    console.log(`[LabBookingsController.listResources] ✅ Returned ${(result as { items?: unknown[] })?.items?.length ?? 0} lab resources`);
+    return result;
   }
 
   @Get('lab-bookings')
-  listForDate(@Query('resource_id') resourceId: string, @Query('date') date: string): Promise<unknown> {
-    return this.labBookings.listForDate(resourceId, date);
+  async listForDate(@Query('resource_id') resourceId: string, @Query('date') date: string): Promise<unknown> {
+    console.log(`[LabBookingsController.listForDate] 📅 Listing bookings for resource ${resourceId} on date: ${date}`);
+    const result = await this.labBookings.listForDate(resourceId, date);
+    console.log(`[LabBookingsController.listForDate] ✅ Returned bookings for date ${date}`);
+    return result;
   }
 
   @Post('lab-bookings')
-  book(@CurrentUser() user: AuthenticatedUser, @Body() dto: BookLabSlotDto): Promise<unknown> {
-    return this.labBookings.book(user, dto);
+  async book(@CurrentUser() user: AuthenticatedUser, @Body() dto: BookLabSlotDto): Promise<unknown> {
+    console.log(`[LabBookingsController.book] 🏷️ User ${user.id} (${user.role}) booking lab slot:`, dto);
+    const result = await this.labBookings.book(user, dto);
+    console.log(`[LabBookingsController.book] ✅ Lab slot booked successfully`);
+    return result;
   }
 
   @Delete('lab-bookings/:id')
-  cancel(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<unknown> {
-    return this.labBookings.cancel(id, user);
+  async cancel(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<unknown> {
+    console.log(`[LabBookingsController.cancel] ❌ User ${user.id} (${user.role}) cancelling lab booking: ${id}`);
+    const result = await this.labBookings.cancel(id, user);
+    console.log(`[LabBookingsController.cancel] ✅ Lab booking ${id} cancelled successfully`);
+    return result;
   }
 }

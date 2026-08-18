@@ -21,25 +21,31 @@ export class AuthController {
 
   @Post('auth/register')
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) response: CookieResponse) {
+    console.log(`[AuthController.register] 📝 Registering new user: ${dto.email} (Role: ${dto.role}, Dept: ${dto.department_id})`);
     const result = await this.auth.register(dto);
     this.setAccessCookie(response, result.access_token);
     this.setRefreshCookie(response, result.refresh_token);
+    console.log(`[AuthController.register] ✅ User registered successfully: ${result.user.id} (${result.user.email})`);
     return result;
   }
 
   @Post('auth/login')
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) response: CookieResponse) {
+    console.log(`[AuthController.login] 🔑 Login attempt for: ${dto.email}`);
     const result = await this.auth.login(dto);
     this.setAccessCookie(response, result.access_token);
     this.setRefreshCookie(response, result.refresh_token);
+    console.log(`[AuthController.login] ✅ Login successful for: ${result.user.id} (${result.user.role})`);
     return result;
   }
 
   @Post('auth/refresh')
   async refresh(@Body() dto: RefreshTokenDto, @Req() request: CookieRequest, @Res({ passthrough: true }) response: CookieResponse) {
+    console.log(`[AuthController.refresh] 🔄 Token refresh requested`);
     const result = await this.auth.refresh(dto.refresh_token ?? this.extractCookie(request, 'refresh_token') ?? '');
     this.setAccessCookie(response, result.access_token);
     this.setRefreshCookie(response, result.refresh_token);
+    console.log(`[AuthController.refresh] ✅ Tokens refreshed successfully`);
     return result;
   }
 
@@ -50,21 +56,29 @@ export class AuthController {
     @Res({ passthrough: true }) response: CookieResponse,
   ) {
     const user = await this.optionalUser(request);
+    console.log(`[AuthController.logout] 🚪 Logout requested for user: ${user?.id ?? 'unknown'} (all devices: ${Boolean(dto.all_devices)})`);
     const result = await this.auth.logout(user, dto.refresh_token ?? this.extractCookie(request, 'refresh_token') ?? undefined, dto.all_devices);
     this.clearAuthCookies(response);
+    console.log(`[AuthController.logout] ✅ Logout completed`);
     return result;
   }
 
   @UseGuards(MockJwtAuthGuard)
   @Get('users/me')
-  getMe(@CurrentUser() user: AuthenticatedUser) {
-    return this.auth.getMe(user.id);
+  async getMe(@CurrentUser() user: AuthenticatedUser) {
+    console.log(`[AuthController.getMe] 👤 Fetching profile for user: ${user.id} (${user.role})`);
+    const result = await this.auth.getMe(user.id);
+    console.log(`[AuthController.getMe] ✅ Profile fetched for: ${user.id}`);
+    return result;
   }
 
   @UseGuards(MockJwtAuthGuard)
   @Patch('users/me')
-  updateMe(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateMeDto) {
-    return this.auth.updateMe(user.id, dto);
+  async updateMe(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateMeDto) {
+    console.log(`[AuthController.updateMe] ✏️ Updating profile for user: ${user.id}`, dto);
+    const result = await this.auth.updateMe(user.id, dto);
+    console.log(`[AuthController.updateMe] ✅ Profile updated for user: ${user.id}`);
+    return result;
   }
 
   private setAccessCookie(response: CookieResponse, token: string): void {
