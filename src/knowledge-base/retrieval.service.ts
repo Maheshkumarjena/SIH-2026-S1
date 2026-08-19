@@ -249,7 +249,7 @@ ${JSON.stringify(chunkContexts, null, 2)}`,
               items: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['chunk_id', 'relevance_score'],
+                required: ['chunk_id', 'relevance_score', 'rationale'],
                 properties: {
                   chunk_id: { type: 'string' },
                   relevance_score: { type: 'number' },

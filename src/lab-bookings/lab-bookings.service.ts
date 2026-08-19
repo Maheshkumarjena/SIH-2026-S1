@@ -53,8 +53,15 @@ export class LabBookingsService {
 
   async listForDate(resourceId: string, date: string) {
     const day = new Date(date);
+    if (isNaN(day.getTime())) {
+      return { items: [] };
+    }
     const next = new Date(day);
     next.setUTCDate(day.getUTCDate() + 1);
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(resourceId)) {
+      return { items: [] };
+    }
     const items = await this.db.labBooking.findMany({
       where: { resourceId, startTime: { gte: day, lt: next } },
       orderBy: { startTime: 'asc' },

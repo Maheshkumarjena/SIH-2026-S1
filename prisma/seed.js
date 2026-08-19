@@ -1,9 +1,16 @@
+require('dotenv').config();
 const { PrismaClient, RiskLevel, RoleName } = require('@prisma/client');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const OpenAI = require('openai');
 
 const prisma = new PrismaClient();
+
+let openaiClient = null;
+if (process.env.OPENAI_API_KEY) {
+  openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 const ids = {
   admin: '11111111-1111-4111-8111-111111111111',
@@ -111,10 +118,33 @@ async function seedLabResources() {
   });
 }
 
+async function getEmbeddings(texts) {
+  if (openaiClient && texts.length > 0) {
+    try {
+      const response = await openaiClient.embeddings.create({
+        model: process.env.LLM_TIER_D_MODEL || 'text-embedding-3-small',
+        input: texts,
+      });
+      console.log(`  [OpenAI Embedding] Successfully generated ${response.data.length} embeddings via text-embedding-3-small`);
+      return response.data.map((d) => d.embedding);
+    } catch (err) {
+      console.warn(`  [OpenAI Embedding Warning] ${err.message}. Falling back to local hash embeddings.`);
+    }
+  }
+  return texts.map((t) => localEmbedding(t));
+}
+
 async function seedKnowledgeBase() {
   const base = process.env.SEED_KB_DIR || path.join(process.env.USERPROFILE || process.env.HOME || '.', 'Downloads', 'files');
+  console.log(`[Seed Knowledge Base] Reading policy files from: ${base}`);
+
   for (const file of files) {
     const fullPath = path.join(base, file);
+    if (!fs.existsSync(fullPath)) {
+      console.warn(`⚠️ Warning: Policy file not found: ${fullPath}`);
+      continue;
+    }
+
     const content = fs.readFileSync(fullPath, 'utf8');
     const meta = parseFrontmatter(content);
     const document = await prisma.knowledgeDocument.upsert({
@@ -136,8 +166,17 @@ async function seedKnowledgeBase() {
         effectiveDate: meta.effective_date ? new Date(meta.effective_date) : null,
       },
     });
+
     await prisma.documentChunk.deleteMany({ where: { documentId: document.id } });
-    for (const chunk of chunkMarkdown(content)) {
+    const chunks = chunkMarkdown(content);
+    console.log(`📄 Ingesting "${meta.document_title}" (${chunks.length} chunks)...`);
+
+    const chunkTexts = chunks.map((c) => c.content);
+    const embeddings = await getEmbeddings(chunkTexts);
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const emb = embeddings[i];
       const created = await prisma.documentChunk.create({
         data: {
           documentId: document.id,
@@ -148,13 +187,14 @@ async function seedKnowledgeBase() {
       });
       await prisma.$executeRawUnsafe(
         'UPDATE document_chunks SET embedding = $1::vector WHERE id = $2::uuid',
-        `[${localEmbedding(chunk.content).join(',')}]`,
+        `[${emb.join(',')}]`,
         created.id,
       );
     }
   }
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS document_chunks_fts_idx ON document_chunks USING GIN (to_tsvector('english', content));`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS document_chunks_clause_fts_idx ON document_chunks USING GIN (to_tsvector('english', coalesce(clause, '')));`);
+  console.log(`✅ Knowledge base vector ingestion complete!`);
 }
 
 async function main() {

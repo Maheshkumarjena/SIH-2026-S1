@@ -8,7 +8,7 @@ import { ToolRegistryService } from './tool-registry.service';
 
 @Injectable()
 export class ToolExecutionService {
-  private readonly ajv = new Ajv();
+  private readonly ajv = new Ajv({ coerceTypes: true, allErrors: true });
 
   constructor(
     private readonly registry: ToolRegistryService,
@@ -35,7 +35,9 @@ export class ToolExecutionService {
     }
     const valid = this.ajv.validate(tool.inputSchema, args);
     if (!valid) {
-      throw new BadRequestException({ code: 'INVALID_TOOL_ARGUMENTS', message: 'Tool arguments failed schema validation' });
+      const errorText = this.ajv.errorsText(this.ajv.errors);
+      console.warn(`[ToolExecutionService] ❌ Tool "${toolName}" argument validation failed: ${errorText}`, args);
+      throw new BadRequestException({ code: 'INVALID_TOOL_ARGUMENTS', message: `Tool arguments failed schema validation: ${errorText}` });
     }
 
     const existing = await this.prisma.workflowStep.findUnique({ where: { idempotencyKey: context.idempotency_key } });

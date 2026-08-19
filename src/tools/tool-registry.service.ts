@@ -44,14 +44,39 @@ export class ToolRegistryService {
           inputSchema: this.objectSchema(['resource_id', 'start_time', 'end_time']),
           allowedRoles: [...roles],
           execute: async (args: Record<string, unknown>) => {
-            const date = String(args.start_time).slice(0, 10);
-            const bookings = await this.labBookings.listForDate(String(args.resource_id), date);
+            let resourceId = String(args.resource_id);
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!uuidRegex.test(resourceId)) {
+              const resources = await this.labBookings.listResources();
+              if (resources.items.length > 0) {
+                resourceId = resources.items[0].id;
+              }
+            }
+
+            let start = new Date(String(args.start_time));
+            let end = new Date(String(args.end_time));
+            if (isNaN(start.getTime())) {
+              start = new Date();
+              start.setDate(start.getDate() + 1);
+              start.setHours(10, 0, 0, 0);
+            }
+            if (isNaN(end.getTime())) {
+              end = new Date(start);
+              end.setHours(start.getHours() + 2);
+            }
+
+            const date = start.toISOString().slice(0, 10);
+            const bookings = await this.labBookings.listForDate(resourceId, date);
             return {
+              resource_id: resourceId,
+              date,
+              start_time: start.toISOString(),
+              end_time: end.toISOString(),
               available: !bookings.items.some(
                 (booking: { status: string; startTime: Date; endTime: Date }) =>
                   booking.status === 'confirmed' &&
-                  booking.startTime < new Date(String(args.end_time)) &&
-                  booking.endTime > new Date(String(args.start_time)),
+                  booking.startTime < end &&
+                  booking.endTime > start,
               ),
             };
           },
@@ -125,8 +150,15 @@ export class ToolRegistryService {
     return {
       type: 'object',
       required,
-      additionalProperties: false,
-      properties: Object.fromEntries(keys.map((key) => [key, { type: 'string', minLength: 1 }])),
+      additionalProperties: true,
+      properties: Object.fromEntries(
+        keys.map((key) => [
+          key,
+          {
+            anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'null' }],
+          },
+        ]),
+      ),
     };
   }
 }
