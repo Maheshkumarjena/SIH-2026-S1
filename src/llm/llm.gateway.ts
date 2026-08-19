@@ -46,7 +46,7 @@ export class LlmGateway {
   async embed(input: string, sessionId?: string): Promise<number[]> {
     const providerConfig = {
       provider: (this.config.get<string>('EMBEDDING_PROVIDER') ?? this.config.get<string>('LLM_TIER_D_PROVIDER') ?? 'local') as LlmProvider,
-      model: this.config.get<string>('EMBEDDING_MODEL') ?? this.config.get<string>('LLM_TIER_D_MODEL') ?? 'local-hash-64',
+      model: this.config.get<string>('EMBEDDING_MODEL') ?? this.config.get<string>('LLM_TIER_D_MODEL') ?? 'local-hash-1536',
     };
     const started = Date.now();
     if (providerConfig.provider === 'openai' && this.config.get<string>('OPENAI_API_KEY')) {
@@ -62,7 +62,7 @@ export class LlmGateway {
       return embedding;
     }
     const embedding = this.localEmbedding(input);
-    await this.auditEmbedding(sessionId, 'local', 'local-hash-64', Date.now() - started, true);
+    await this.auditEmbedding(sessionId, 'local', 'local-hash-1536', Date.now() - started, true);
     return embedding;
   }
 
@@ -139,7 +139,7 @@ export class LlmGateway {
   }
 
   private localEmbedding(input: string): number[] {
-    const dims = 64;
+    const dims = 1536;
     const vector = Array.from({ length: dims }, () => 0);
     const terms = input
       .toLowerCase()

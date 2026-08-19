@@ -50,7 +50,7 @@ function chunkMarkdown(content) {
 }
 
 function localEmbedding(input) {
-  const dims = 64;
+  const dims = 1536;
   const vector = Array.from({ length: dims }, () => 0);
   const terms = input
     .toLowerCase()
@@ -153,6 +153,8 @@ async function seedKnowledgeBase() {
       );
     }
   }
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS document_chunks_fts_idx ON document_chunks USING GIN (to_tsvector('english', content));`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS document_chunks_clause_fts_idx ON document_chunks USING GIN (to_tsvector('english', coalesce(clause, '')));`);
 }
 
 async function main() {

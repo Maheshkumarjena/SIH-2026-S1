@@ -274,12 +274,12 @@ export class AgentOrchestrationService implements OnModuleInit {
   }
 
   private async retrieveNode(state: AgentGraphState): Promise<Partial<AgentGraphState>> {
-    console.log(`[LangGraph Node: retrieve] 📚 Retrieving relevant knowledge base chunks`);
-    const retrieved_chunks = await this.retrieval.search(
-      `${state.raw_input} ${JSON.stringify(state.entities)}`,
-      8,
-    );
-    await this.audit.append('agent_sessions', state.session_id, 'N5.retrieval', 'agent', {
+    console.log(`[LangGraph Node: retrieve] 📚 Running Hybrid Retrieval (pgvector + tsvector) & Groq Reranker (top-12 -> top-6)`);
+    const query = `${state.raw_input} ${JSON.stringify(state.entities)}`;
+    const retrieved_chunks = await this.retrieval.search(query, 6, state.session_id);
+    await this.audit.append('agent_sessions', state.session_id, 'N5.hybrid_retrieval_and_rerank', 'agent', {
+      query,
+      top_k: 6,
       chunks: retrieved_chunks.map((chunk) => ({
         chunk_id: chunk.chunk_id,
         source_document: chunk.source_document,
@@ -289,7 +289,7 @@ export class AgentOrchestrationService implements OnModuleInit {
         similarity: chunk.similarity,
       })),
     });
-    console.log(`[LangGraph Node: retrieve] ✅ Retrieved ${retrieved_chunks.length} chunks`);
+    console.log(`[LangGraph Node: retrieve] ✅ Selected ${retrieved_chunks.length} reranked chunks`);
     return { retrieved_chunks };
   }
 
