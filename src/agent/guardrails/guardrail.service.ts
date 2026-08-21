@@ -40,13 +40,21 @@ export class GuardrailService {
     }));
   }
 
-  validateCitationSupport(answer: string, citedChunkIds: string[], retrievedChunks: ChunkResult[]): GuardrailFlag[] {
+  validateCitationSupport(
+    answer: string,
+    citedChunkIds: string[],
+    retrievedChunks: ChunkResult[],
+    hasToolResults = false,
+  ): GuardrailFlag[] {
     const flags = this.validateCitations(citedChunkIds, retrievedChunks);
     const factualTerms = this.significantTerms(answer);
     if (factualTerms.length < 3) {
       return flags;
     }
     if (citedChunkIds.length === 0) {
+      if (hasToolResults) {
+        return flags;
+      }
       return [
         ...flags,
         {
@@ -65,7 +73,7 @@ export class GuardrailService {
     const citedTerms = new Set(this.significantTerms(citedText));
     const supportedTerms = factualTerms.filter((term) => citedTerms.has(term));
     const supportScore = supportedTerms.length / Math.max(1, factualTerms.length);
-    if (supportScore < 0.35) {
+    if (supportScore < 0.35 && !hasToolResults) {
       flags.push({
         type: 'unsupported_claim',
         severity: 'medium',
@@ -79,12 +87,19 @@ export class GuardrailService {
 
   minimizeToolArgs(toolName: string, args: Record<string, unknown>): Record<string, unknown> {
     const allowlists: Record<string, string[]> = {
-      create_request: ['request_type', 'description', 'department_id', 'session_id'],
+      create_request: ['request_type', 'description', 'department_id', 'session_id', 'request_id'],
+      get_student_profile: ['user_id'],
+      check_fee_status: ['user_id'],
+      get_annual_fee_summary: ['user_id', 'year'],
+      get_exam_record: ['user_id', 'course_code'],
       check_lab_availability: ['resource_id', 'start_time', 'end_time'],
-      book_lab_slot: ['resource_id', 'start_time', 'end_time', 'course_code', 'faculty_ref'],
+      book_lab_slot: ['resource_id', 'start_time', 'end_time', 'course_code', 'faculty_ref', 'section_id'],
+      check_seminar_hall_availability: ['hall_id', 'start_time', 'end_time'],
+      book_seminar_hall: ['hall_id', 'purpose', 'start_time', 'end_time'],
       notify_department: ['request_id', 'department_id', 'message'],
       escalate_grievance: ['grievance_id', 'reason'],
       issue_certificate: ['request_id', 'certificate_type', 'purpose'],
+      render_certificate_document: ['certificate_id'],
     };
     const allowed = allowlists[toolName] ?? [];
     return Object.fromEntries(Object.entries(args).filter(([key]) => allowed.includes(key)));

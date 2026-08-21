@@ -46,6 +46,10 @@ export const AgentStateAnnotation = Annotation.Root({
   clarification_rounds: Annotation<number>(),
   retry_counts: Annotation<Record<string, number>>(),
   conversation_history: Annotation<AgentMessage[]>(),
+  tool_results: Annotation<Array<{ tool_name: string; result: unknown }>>({
+    reducer: (curr, update) => (update ? curr.concat(update) : curr),
+    default: () => [],
+  }),
   final_response: Annotation<string | null>(),
   error: Annotation<string | null>(),
 });
@@ -130,8 +134,18 @@ export class AgentOrchestrationService implements OnModuleInit {
       .addEdge('retrieve', 'guardrail_doc_screen')
       .addEdge('guardrail_doc_screen', 'confidence_evaluator')
       .addConditionalEdges('confidence_evaluator', (state) => {
+        const toolDrivenIntents: Intent[] = [
+          'fee_query',
+          'exam_record_query',
+          'student_profile_query',
+          'certificate_request',
+          'lab_booking',
+          'maintenance_issue',
+          'grievance',
+        ];
+        const isToolDriven = toolDrivenIntents.includes(state.intent);
         const threshold = this.config.get<number>('RETRIEVAL_CONFIDENCE_THRESHOLD') ?? 0.62;
-        return state.retrieval_confidence >= threshold ? 'confident' : 'needs_clarification';
+        return isToolDriven || state.retrieval_confidence >= threshold ? 'confident' : 'needs_clarification';
       }, {
         confident: 'generate_plan',
         needs_clarification: 'ask_for_clarification',
@@ -223,6 +237,7 @@ export class AgentOrchestrationService implements OnModuleInit {
         cited_chunk_ids: message.citedChunkIds,
         created_at: message.createdAt,
       })),
+      tool_results: [],
       final_response: null,
       error: null,
     };
@@ -492,9 +507,15 @@ export class AgentOrchestrationService implements OnModuleInit {
 
     let currentStepIndex = state.current_step_index;
     const additionalFlags: GuardrailFlag[] = [];
+    const executedToolResults: Array<{ tool_name: string; result: unknown }> = [...(state.tool_results ?? [])];
 
     for (const [idx, step] of steps.entries()) {
       if (['done', 'failed', 'rejected'].includes(step.status)) {
+        if (step.status === 'done' && step.resultJson) {
+          if (!executedToolResults.some((tr) => tr.tool_name === step.toolName)) {
+            executedToolResults.push({ tool_name: step.toolName, result: step.resultJson });
+          }
+        }
         continue;
       }
 
@@ -512,7 +533,7 @@ export class AgentOrchestrationService implements OnModuleInit {
         );
         const flags = this.guardrails.screenToolArgs(this.dbStepToPlanStep(step));
         additionalFlags.push(...flags);
-        await this.tools.execute(
+        const result = await this.tools.execute(
           step.toolName,
           step.toolArgs as Record<string, unknown>,
           {
@@ -523,6 +544,8 @@ export class AgentOrchestrationService implements OnModuleInit {
           },
           'low',
         );
+        executedToolResults.push({ tool_name: step.toolName, result });
+
         this.emitProgress(
           state.session_id,
           'step_loop',
@@ -573,23 +596,43 @@ export class AgentOrchestrationService implements OnModuleInit {
         pending_approval_id: approval.id,
         current_step_index: currentStepIndex,
         guardrail_flags: additionalFlags,
+        tool_results: executedToolResults,
       };
     }
 
     return {
       current_step_index: currentStepIndex,
       guardrail_flags: additionalFlags,
+      tool_results: executedToolResults,
     };
   }
 
   private async notifyUserNode(state: AgentGraphState): Promise<Partial<AgentGraphState>> {
     console.log(`[LangGraph Node: notify_user] 💬 Generating final user response`);
+    this.emitProgress(state.session_id, 'notify_user', 'Synthesizing response from database & policy context...', 9, 10);
     const citedChunkIds = state.retrieved_chunks.slice(0, 3).map((chunk) => chunk.chunk_id);
-    const content = `Done. I completed the low-risk steps for your ${state.intent.replace('_', ' ')} request.`;
+    
+    let content: string;
+    try {
+      content = await this.nlu.generateSynthesizedResponse(
+        state.raw_input,
+        state.intent,
+        state.user,
+        state.tool_results ?? [],
+        state.retrieved_chunks,
+        state.session_id,
+      );
+    } catch (err) {
+      this.logger.warn(`Failed to synthesize response with LLM: ${err}`);
+      content = `Done. I processed your request for ${state.intent.replace(/_/g, ' ')}.`;
+    }
+
+    const hasToolResults = (state.tool_results ?? []).length > 0;
     const citationFlags = this.guardrails.validateCitationSupport(
       content,
       citedChunkIds,
       state.retrieved_chunks,
+      hasToolResults,
     );
 
     if (citationFlags.length > 0) {
@@ -718,6 +761,9 @@ export class AgentOrchestrationService implements OnModuleInit {
       grievance: 'grievance',
       general_query: 'general_query',
       small_talk: 'general_query',
+      fee_query: 'general_query',
+      exam_record_query: 'general_query',
+      student_profile_query: 'general_query',
     };
     return map[intent] ?? 'general_query';
   }

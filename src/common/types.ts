@@ -10,7 +10,10 @@ export type Intent =
   | 'lab_booking'
   | 'grievance'
   | 'general_query'
-  | 'small_talk';
+  | 'small_talk'
+  | 'fee_query'
+  | 'exam_record_query'
+  | 'student_profile_query';
 
 export type WorkflowStepStatus =
   | 'pending'
@@ -80,6 +83,7 @@ export interface AgentState {
   clarification_rounds: number;
   retry_counts: Record<string, number>;
   conversation_history: AgentMessage[];
+  tool_results?: Array<{ tool_name: string; result: unknown }>;
   final_response: string | null;
   error: string | null;
 }
