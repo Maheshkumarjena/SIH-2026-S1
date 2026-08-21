@@ -3,52 +3,39 @@ import { AuthenticatedUser } from '../common/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventDispatcherService } from '../realtime/event-dispatcher.service';
 
-interface LabResourceRecord {
-  id: string;
-  name: string;
-  departmentId: string;
-  capacity: number;
-  restrictions: string | null;
-}
-
-interface LabBookingRecord {
-  id: string;
-  resourceId: string;
-  userId: string;
-  startTime: Date;
-  endTime: Date;
-  status: string;
-  courseCode: string | null;
-  facultyRef: string | null;
-}
-
-interface LabPrisma {
-  labResource: {
-    findMany(args: unknown): Promise<LabResourceRecord[]>;
-    findUnique(args: unknown): Promise<LabResourceRecord | null>;
-  };
-  labBooking: {
-    findMany(args: unknown): Promise<LabBookingRecord[]>;
-    findFirst(args: unknown): Promise<LabBookingRecord | null>;
-    findUnique(args: unknown): Promise<LabBookingRecord | null>;
-    create(args: unknown): Promise<LabBookingRecord>;
-    update(args: unknown): Promise<LabBookingRecord>;
-  };
-}
-
 @Injectable()
 export class LabBookingsService {
-  private readonly db: LabPrisma;
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventDispatcherService,
-  ) {
-    this.db = prisma as unknown as LabPrisma;
-  }
+  ) {}
 
-  listResources() {
-    return this.db.labResource.findMany({ orderBy: { name: 'asc' } }).then((items) => ({ items }));
+  async listResources(departmentCodeOrId?: string) {
+    let whereClause: any = {};
+    if (departmentCodeOrId) {
+      const dept = await this.prisma.department.findFirst({
+        where: {
+          OR: [
+            { id: departmentCodeOrId },
+            { code: { equals: departmentCodeOrId, mode: 'insensitive' } },
+          ],
+        },
+      });
+      if (dept) {
+        whereClause = {
+          OR: [{ departmentId: dept.id }, { departmentId: null }],
+        };
+      }
+    }
+
+    const items = await this.prisma.labResource.findMany({
+      where: whereClause,
+      include: {
+        department: { select: { id: true, name: true, code: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+    return { items };
   }
 
   async listForDate(resourceId: string, date: string) {
@@ -62,25 +49,31 @@ export class LabBookingsService {
     if (!uuidRegex.test(resourceId)) {
       return { items: [] };
     }
-    const items = await this.db.labBooking.findMany({
+    const items = await this.prisma.labBooking.findMany({
       where: { resourceId, startTime: { gte: day, lt: next } },
+      include: {
+        section: { select: { batchLabel: true } },
+      },
       orderBy: { startTime: 'asc' },
     });
     return { items };
   }
 
-  async book(user: AuthenticatedUser, dto: { resource_id: string; start_time: string; end_time: string; course_code?: string; faculty_ref?: string }) {
+  async book(
+    user: AuthenticatedUser,
+    dto: { resource_id: string; start_time: string; end_time: string; course_code?: string; faculty_ref?: string; section_id?: string },
+  ) {
     const start = new Date(dto.start_time);
     const end = new Date(dto.end_time);
     const durationHours = (end.getTime() - start.getTime()) / 36e5;
     if (durationHours < 1 || durationHours > 4) {
       throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Booking must be 1-4 hours' });
     }
-    const resource = await this.db.labResource.findUnique({ where: { id: dto.resource_id } });
+    const resource = await this.prisma.labResource.findUnique({ where: { id: dto.resource_id } });
     if (!resource) {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Lab resource not found' });
     }
-    const conflict = await this.db.labBooking.findFirst({
+    const conflict = await this.prisma.labBooking.findFirst({
       where: {
         resourceId: dto.resource_id,
         status: 'confirmed',
@@ -91,10 +84,20 @@ export class LabBookingsService {
     if (conflict) {
       throw new ConflictException({ code: 'SLOT_CONFLICT', message: 'Slot is already booked' });
     }
-    const booking = await this.db.labBooking.create({
+
+    let sectionId = dto.section_id;
+    if (!sectionId && user.role === 'student') {
+      const student = await this.prisma.student.findUnique({ where: { userId: user.id } });
+      if (student) {
+        sectionId = student.sectionId;
+      }
+    }
+
+    const booking = await this.prisma.labBooking.create({
       data: {
         resourceId: dto.resource_id,
         userId: user.id,
+        sectionId,
         startTime: start,
         endTime: end,
         courseCode: dto.course_code,
@@ -106,11 +109,11 @@ export class LabBookingsService {
   }
 
   async cancel(id: string, user: AuthenticatedUser) {
-    const booking = await this.db.labBooking.findUnique({ where: { id } });
+    const booking = await this.prisma.labBooking.findUnique({ where: { id } });
     if (!booking) {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Booking not found' });
     }
-    const updated = await this.db.labBooking.update({ where: { id }, data: { status: 'cancelled' } });
+    const updated = await this.prisma.labBooking.update({ where: { id }, data: { status: 'cancelled' } });
     this.events.emitToUser(user.id, 'booking.cancelled', { booking: updated });
     return updated;
   }

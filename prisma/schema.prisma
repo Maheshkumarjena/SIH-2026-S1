@@ -38,22 +38,126 @@ enum ApprovalDecision {
 }
 
 model User {
-  id                 String         @id @default(uuid()) @db.Uuid
-  name               String
-  email              String         @unique
-  passwordHash       String         @map("password_hash")
-  role               RoleName
-  departmentId       String         @map("department_id") @db.Uuid
-  preferredLanguage  String         @default("en") @map("preferred_language")
-  notificationPrefs  Json           @default("{}") @map("notification_prefs")
-  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz
-  sessions           AgentSession[]
-  requests           ServiceRequest[]
-  notifications      Notification[]
-  refreshTokens      RefreshToken[]
-  certificates       Certificate[]
+  id                String               @id @default(uuid()) @db.Uuid
+  name              String
+  email             String               @unique
+  passwordHash      String               @map("password_hash")
+  role              RoleName
+  departmentId      String               @map("department_id") @db.Uuid
+  preferredLanguage String               @default("en") @map("preferred_language")
+  notificationPrefs Json                 @default("{}") @map("notification_prefs")
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  department        Department           @relation("DepartmentUsers", fields: [departmentId], references: [id])
+  hodDepartments    Department[]         @relation("DepartmentHod")
+  student           Student?
+  faculty           Faculty?
+  sessions          AgentSession[]
+  requests          ServiceRequest[]
+  notifications     Notification[]
+  refreshTokens     RefreshToken[]
+  certificates      Certificate[]
+  seminarBookings   SeminarHallBooking[]
+  wardenAllocations HostelAllocation[]   @relation("WardenAllocations")
 
   @@map("users")
+}
+
+model Department {
+  id           String        @id @default(uuid()) @db.Uuid
+  name         String
+  code         String        @unique
+  type         String        // academic | hostel | lab | administrative
+  hodUserId    String?       @map("hod_user_id") @db.Uuid
+  hodUser      User?         @relation("DepartmentHod", fields: [hodUserId], references: [id])
+  users        User[]        @relation("DepartmentUsers")
+  sections     Section[]
+  faculty      Faculty[]
+  subjects     Subject[]
+  labResources LabResource[]
+  seminarHalls SeminarHall[]
+  feeStructures FeeStructure[]
+
+  @@map("departments")
+}
+
+model Section {
+  id             String                  @id @default(uuid()) @db.Uuid
+  departmentId   String                  @map("department_id") @db.Uuid
+  name           String
+  year           Int
+  semester       Int
+  batchLabel     String                  @map("batch_label")
+  classTeacherId String?                 @map("class_teacher_id") @db.Uuid
+  strength       Int
+  department     Department              @relation(fields: [departmentId], references: [id])
+  classTeacher   Faculty?                @relation("ClassTeacher", fields: [classTeacherId], references: [userId])
+  students       Student[]
+  labBookings    LabBooking[]
+  subjectLinks   SectionSubjectFaculty[]
+
+  @@map("sections")
+}
+
+model Student {
+  userId           String             @id @map("user_id") @db.Uuid
+  registrationNo   String             @unique @map("registration_no")
+  rollNo           String             @map("roll_no")
+  sectionId        String             @map("section_id") @db.Uuid
+  admissionYear    Int                @map("admission_year")
+  status           String             @default("active")
+  guardianName     String?            @map("guardian_name")
+  guardianPhone    String?            @map("guardian_phone")
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  section          Section            @relation(fields: [sectionId], references: [id])
+  examRecords      ExamRecord[]
+  feePayments      FeePayment[]
+  hostelAllocations HostelAllocation[]
+  libraryRecords   LibraryRecord[]
+
+  @@map("students")
+}
+
+model Faculty {
+  userId               String                  @id @map("user_id") @db.Uuid
+  employeeId           String                  @unique @map("employee_id")
+  departmentId         String                  @map("department_id") @db.Uuid
+  designation          String
+  isLabIncharge        Boolean                 @default(false) @map("is_lab_incharge")
+  isHod                Boolean                 @default(false) @map("is_hod")
+  user                 User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department           Department              @relation(fields: [departmentId], references: [id])
+  classTeacherSections Section[]               @relation("ClassTeacher")
+  subjectLinks         SectionSubjectFaculty[]
+  inchargeLabs         LabResource[]           @relation("LabIncharge")
+
+  @@map("faculty")
+}
+
+model Subject {
+  id           String                  @id @default(uuid()) @db.Uuid
+  departmentId String                  @map("department_id") @db.Uuid
+  code         String                  @unique
+  name         String
+  semester     Int
+  requiresLab  Boolean                 @default(false) @map("requires_lab")
+  department   Department              @relation(fields: [departmentId], references: [id])
+  sectionLinks SectionSubjectFaculty[]
+  examRecords  ExamRecord[]
+
+  @@map("subjects")
+}
+
+model SectionSubjectFaculty {
+  id        String  @id @default(uuid()) @db.Uuid
+  sectionId String  @map("section_id") @db.Uuid
+  subjectId String  @map("subject_id") @db.Uuid
+  facultyId String  @map("faculty_id") @db.Uuid
+  section   Section @relation(fields: [sectionId], references: [id])
+  subject   Subject @relation(fields: [subjectId], references: [id])
+  faculty   Faculty @relation(fields: [facultyId], references: [userId])
+
+  @@unique([sectionId, subjectId, facultyId])
+  @@map("section_subject_faculty")
 }
 
 model RefreshToken {
@@ -82,21 +186,21 @@ model RequestType {
 }
 
 model ServiceRequest {
-  id             String         @id @default(uuid()) @db.Uuid
-  userId         String         @map("user_id") @db.Uuid
-  sessionId      String?        @map("session_id") @db.Uuid
-  requestTypeId  String         @map("request_type_id") @db.Uuid
-  departmentId   String?        @map("department_id") @db.Uuid
-  status         String         @default("pending")
-  description    String
-  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz
-  slaDueAt       DateTime       @map("sla_due_at") @db.Timestamptz
-  resolvedAt     DateTime?      @map("resolved_at") @db.Timestamptz
-  user           User           @relation(fields: [userId], references: [id])
-  session        AgentSession?  @relation(fields: [sessionId], references: [id])
-  requestType    RequestType    @relation(fields: [requestTypeId], references: [id])
-  workflowSteps  WorkflowStep[]
-  certificates   Certificate[]
+  id            String         @id @default(uuid()) @db.Uuid
+  userId        String         @map("user_id") @db.Uuid
+  sessionId     String?        @map("session_id") @db.Uuid
+  requestTypeId String         @map("request_type_id") @db.Uuid
+  departmentId  String?        @map("department_id") @db.Uuid
+  status        String         @default("pending")
+  description   String
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  slaDueAt      DateTime       @map("sla_due_at") @db.Timestamptz
+  resolvedAt    DateTime?      @map("resolved_at") @db.Timestamptz
+  user          User           @relation(fields: [userId], references: [id])
+  session       AgentSession?  @relation(fields: [sessionId], references: [id])
+  requestType   RequestType    @relation(fields: [requestTypeId], references: [id])
+  workflowSteps WorkflowStep[]
+  certificates  Certificate[]
 
   @@index([userId, status])
   @@index([slaDueAt])
@@ -179,42 +283,42 @@ model AuditLog {
 }
 
 model KnowledgeDocument {
-  id             String          @id @default(uuid()) @db.Uuid
-  title          String
-  documentId     String          @map("document_id")
-  version        String
-  uploadedBy     String          @map("uploaded_by") @db.Uuid
-  fileUrl        String?         @map("file_url")
-  status         String          @default("active")
-  effectiveDate  DateTime?       @map("effective_date") @db.Date
-  chunks         DocumentChunk[]
+  id            String          @id @default(uuid()) @db.Uuid
+  title         String
+  documentId    String          @map("document_id")
+  version       String
+  uploadedBy    String          @map("uploaded_by") @db.Uuid
+  fileUrl       String?         @map("file_url")
+  status        String          @default("active")
+  effectiveDate DateTime?       @map("effective_date") @db.Date
+  chunks        DocumentChunk[]
 
   @@unique([documentId, version])
   @@map("knowledge_documents")
 }
 
 model DocumentChunk {
-  id          String            @id @default(uuid()) @db.Uuid
-  documentId  String            @map("document_id") @db.Uuid
-  content     String
-  embedding   Unsupported("vector")?
-  sourcePage  Int?              @map("source_page")
-  clause      String?
-  document    KnowledgeDocument @relation(fields: [documentId], references: [id])
+  id         String                 @id @default(uuid()) @db.Uuid
+  documentId String                 @map("document_id") @db.Uuid
+  content    String
+  embedding  Unsupported("vector")?
+  sourcePage Int?                   @map("source_page")
+  clause     String?
+  document   KnowledgeDocument      @relation(fields: [documentId], references: [id])
 
   @@map("document_chunks")
 }
 
 model AgentSession {
-  id          String           @id @default(uuid()) @db.Uuid
-  userId      String           @map("user_id") @db.Uuid
-  startedAt   DateTime         @default(now()) @map("started_at") @db.Timestamptz
-  language    String           @default("en")
-  stateJson   Json?            @map("state_json")
-  user        User             @relation(fields: [userId], references: [id])
-  messages    AgentMessage[]
-  requests    ServiceRequest[]
-  steps       WorkflowStep[]
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  startedAt DateTime         @default(now()) @map("started_at") @db.Timestamptz
+  language  String           @default("en")
+  stateJson Json?            @map("state_json")
+  user      User             @relation(fields: [userId], references: [id])
+  messages  AgentMessage[]
+  requests  ServiceRequest[]
+  steps     WorkflowStep[]
 
   @@index([userId])
   @@map("agent_sessions")
@@ -263,29 +367,138 @@ model Notification {
 }
 
 model LabResource {
-  id           String       @id @default(uuid()) @db.Uuid
-  name         String
-  departmentId String       @map("department_id") @db.Uuid
-  capacity     Int
-  restrictions String?
-  bookings     LabBooking[]
+  id            String       @id @default(uuid()) @db.Uuid
+  name          String
+  departmentId  String?      @map("department_id") @db.Uuid
+  capacity      Int
+  restrictions  String?
+  labType       String       @default("programming") @map("lab_type")
+  labInchargeId String?      @map("lab_incharge_id") @db.Uuid
+  location      String?
+  department    Department?  @relation(fields: [departmentId], references: [id])
+  labIncharge   Faculty?     @relation("LabIncharge", fields: [labInchargeId], references: [userId])
+  bookings      LabBooking[]
 
   @@map("lab_resources")
 }
 
 model LabBooking {
-  id         String      @id @default(uuid()) @db.Uuid
-  resourceId String      @map("resource_id") @db.Uuid
-  userId     String      @map("user_id") @db.Uuid
-  startTime  DateTime    @map("start_time") @db.Timestamptz
-  endTime    DateTime    @map("end_time") @db.Timestamptz
-  status     String      @default("confirmed")
-  courseCode String?     @map("course_code")
-  facultyRef String?     @map("faculty_ref")
-  resource   LabResource @relation(fields: [resourceId], references: [id])
+  id         String       @id @default(uuid()) @db.Uuid
+  resourceId String       @map("resource_id") @db.Uuid
+  userId     String       @map("user_id") @db.Uuid
+  sectionId  String?      @map("section_id") @db.Uuid
+  startTime  DateTime     @map("start_time") @db.Timestamptz
+  endTime    DateTime     @map("end_time") @db.Timestamptz
+  status     String       @default("confirmed")
+  courseCode String?      @map("course_code")
+  facultyRef String?      @map("faculty_ref")
+  resource   LabResource  @relation(fields: [resourceId], references: [id])
+  section    Section?     @relation(fields: [sectionId], references: [id])
 
   @@index([resourceId, startTime])
   @@map("lab_bookings")
+}
+
+model SeminarHall {
+  id           String               @id @default(uuid()) @db.Uuid
+  name         String
+  departmentId String?              @map("department_id") @db.Uuid
+  capacity     Int
+  hasProjector Boolean              @default(false) @map("has_projector")
+  hasAc        Boolean              @default(false) @map("has_ac")
+  location     String?
+  department   Department?          @relation(fields: [departmentId], references: [id])
+  bookings     SeminarHallBooking[]
+
+  @@map("seminar_halls")
+}
+
+model SeminarHallBooking {
+  id               String      @id @default(uuid()) @db.Uuid
+  hallId           String      @map("hall_id") @db.Uuid
+  bookedByUserId   String      @map("booked_by_user_id") @db.Uuid
+  purpose          String
+  startTime        DateTime    @map("start_time") @db.Timestamptz
+  endTime          DateTime    @map("end_time") @db.Timestamptz
+  status           String      @default("confirmed")
+  approvalRequired Boolean     @default(false) @map("approval_required")
+  hall             SeminarHall @relation(fields: [hallId], references: [id])
+  bookedByUser     User        @relation(fields: [bookedByUserId], references: [id])
+
+  @@index([hallId, startTime])
+  @@map("seminar_hall_bookings")
+}
+
+model FeeStructure {
+  id           String       @id @default(uuid()) @db.Uuid
+  departmentId String       @map("department_id") @db.Uuid
+  year         Int
+  semester     Int
+  tuitionFee   Decimal      @map("tuition_fee")
+  hostelFee    Decimal?     @map("hostel_fee")
+  examFee      Decimal      @map("exam_fee")
+  dueDate      DateTime     @map("due_date") @db.Date
+  department   Department   @relation(fields: [departmentId], references: [id])
+  payments     FeePayment[]
+
+  @@map("fee_structure")
+}
+
+model FeePayment {
+  id             String       @id @default(uuid()) @db.Uuid
+  studentId      String       @map("student_id") @db.Uuid
+  feeStructureId String       @map("fee_structure_id") @db.Uuid
+  amountPaid     Decimal      @map("amount_paid")
+  paymentStatus  String       @map("payment_status")
+  paymentDate    DateTime?    @map("payment_date") @db.Timestamptz
+  receiptNo      String?      @unique @map("receipt_no")
+  paymentMode    String?      @map("payment_mode")
+  student        Student      @relation(fields: [studentId], references: [userId])
+  feeStructure   FeeStructure @relation(fields: [feeStructureId], references: [id])
+
+  @@map("fee_payments")
+}
+
+model ExamRecord {
+  id            String    @id @default(uuid()) @db.Uuid
+  studentId     String    @map("student_id") @db.Uuid
+  subjectId     String    @map("subject_id") @db.Uuid
+  examType      String    @map("exam_type")
+  marksObtained Decimal?  @map("marks_obtained")
+  maxMarks      Decimal   @map("max_marks")
+  status        String    @default("published")
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz
+  student       Student   @relation(fields: [studentId], references: [userId])
+  subject       Subject   @relation(fields: [subjectId], references: [id])
+
+  @@map("exam_records")
+}
+
+model HostelAllocation {
+  id          String   @id @default(uuid()) @db.Uuid
+  studentId   String   @map("student_id") @db.Uuid
+  hostelBlock String   @map("hostel_block")
+  roomNo      String   @map("room_no")
+  wardenId    String?  @map("warden_id") @db.Uuid
+  status      String   @default("active")
+  allocatedAt DateTime @map("allocated_at") @db.Date
+  student     Student  @relation(fields: [studentId], references: [userId])
+  warden      User?    @relation("WardenAllocations", fields: [wardenId], references: [id])
+
+  @@map("hostel_allocations")
+}
+
+model LibraryRecord {
+  id         String    @id @default(uuid()) @db.Uuid
+  studentId  String    @map("student_id") @db.Uuid
+  bookTitle  String    @map("book_title")
+  issuedAt   DateTime  @map("issued_at") @db.Date
+  dueDate    DateTime  @map("due_date") @db.Date
+  returnedAt DateTime? @map("returned_at") @db.Date
+  fineAmount Decimal   @default(0) @map("fine_amount")
+  student    Student   @relation(fields: [studentId], references: [userId])
+
+  @@map("library_records")
 }
 
 model Grievance {

@@ -14,6 +14,8 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { RequestsModule } from './requests/requests.module';
 import { ToolsModule } from './tools/tools.module';
 import { GrievancesModule } from './grievances/grievances.module';
+import { StudentsModule } from './students/students.module';
+import { SeminarHallsModule } from './seminar-halls/seminar-halls.module';
 
 @Module({
   imports: [
@@ -32,6 +34,8 @@ import { GrievancesModule } from './grievances/grievances.module';
     ToolsModule,
     ApprovalsModule,
     AgentModule,
+    StudentsModule,
+    SeminarHallsModule,
   ],
 })
 export class AppModule {}

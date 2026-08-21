@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, randomBytes } from 'crypto';
 import { Prisma } from '@prisma/client';
@@ -32,11 +32,22 @@ export class CertificateService {
       request_id: request.id,
       user_id: request.userId,
       student_name: student.name,
+      registration_no: student.registration_no,
+      roll_no: student.roll_no,
+      batch_label: student.batch_label,
+      year: student.year,
+      semester: student.semester,
       department_id: student.department_id,
+      department_name: student.department_name,
       certificate_type: args.certificate_type,
       purpose: args.purpose,
+      annual_scheduled_fee: student.annual_scheduled_fee,
+      amount_paid: student.amount_paid,
+      outstanding_balance: student.outstanding_balance,
+      payment_status: student.payment_status,
       issued_at: issuedAt.toISOString(),
     };
+
     const signature = this.sign(payload);
     const certificate = await this.prisma.certificate.create({
       data: {
@@ -52,11 +63,70 @@ export class CertificateService {
         issuedAt,
       },
     });
+
     await this.prisma.serviceRequest.update({
       where: { id: request.id },
       data: { status: 'completed', resolvedAt: issuedAt },
     });
-    return this.toDto(certificate);
+
+    return {
+      ...this.toDto(certificate),
+      signed_payload: payload,
+    };
+  }
+
+  async renderCertificateDocument(certificateId: string) {
+    const cert = await this.prisma.certificate.findUnique({
+      where: { id: certificateId },
+      include: {
+        user: true,
+        request: true,
+      },
+    });
+
+    if (!cert) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Certificate not found' });
+    }
+
+    const payload = (cert.signedPayload ?? {}) as Record<string, any>;
+    const isLoanDoc = cert.certificateType.includes('loan') || cert.purpose.toLowerCase().includes('loan');
+
+    return {
+      header: {
+        institution: 'Campus Service Copilot University',
+        office: 'Office of the Registrar & Academic Affairs',
+        serialNumber: cert.serialNumber,
+        verificationCode: cert.verificationCode,
+        issuedDate: cert.issuedAt.toISOString().slice(0, 10),
+      },
+      title: isLoanDoc
+        ? 'BONAFIDE ENROLLMENT & FEE STRUCTURE CERTIFICATE (FOR EDUCATION LOAN)'
+        : 'OFFICIAL BONAFIDE ENROLLMENT CERTIFICATE',
+      studentDetails: {
+        name: payload.student_name ?? cert.user.name,
+        registrationNo: payload.registration_no ?? 'N/A',
+        rollNo: payload.roll_no ?? 'N/A',
+        department: payload.department_name ?? 'Academic Department',
+        batch: payload.batch_label ?? 'N/A',
+        currentYear: payload.year ? `${payload.year}nd Year` : 'Enrolled Student',
+        semester: payload.semester ?? 'N/A',
+      },
+      purpose: cert.purpose,
+      financialDetails: isLoanDoc
+        ? {
+            annualScheduledFee: payload.annual_scheduled_fee ?? 0,
+            amountPaid: payload.amount_paid ?? 0,
+            outstandingBalance: payload.outstanding_balance ?? 0,
+            paymentStatus: payload.payment_status ?? 'unpaid',
+          }
+        : null,
+      verificationBlock: {
+        signatureHmac: cert.signature,
+        issuedBy: cert.issuedBy,
+        officialSeal: 'AUTHENTICATED ACADEMIC SEAL',
+        verificationUrl: `/verify-certificate?code=${cert.verificationCode}`,
+      },
+    };
   }
 
   private sign(payload: Record<string, unknown>): string {
