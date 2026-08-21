@@ -129,6 +129,46 @@ export class CertificateService {
     };
   }
 
+  async getUserCertificates(userId: string) {
+    const certs = await this.prisma.certificate.findMany({
+      where: { userId },
+      orderBy: { issuedAt: 'desc' },
+    });
+    return certs.map((cert) => ({
+      ...this.toDto(cert),
+      signed_payload: cert.signedPayload,
+    }));
+  }
+
+  async verifyCertificateByCode(code: string) {
+    const cert = await this.prisma.certificate.findFirst({
+      where: {
+        OR: [{ verificationCode: code }, { serialNumber: code }],
+      },
+    });
+
+    if (!cert) {
+      throw new NotFoundException({
+        code: 'INVALID_VERIFICATION_CODE',
+        message: 'No authentic certificate found matching code or serial number',
+      });
+    }
+
+    const payload = (cert.signedPayload ?? {}) as Record<string, unknown>;
+    const expectedSignature = this.sign(payload);
+    const isAuthentic = cert.signature === expectedSignature;
+
+    const renderedDoc = await this.renderCertificateDocument(cert.id);
+
+    return {
+      verified: isAuthentic,
+      serial_number: cert.serialNumber,
+      verification_code: cert.verificationCode,
+      issued_at: cert.issuedAt,
+      document: renderedDoc,
+    };
+  }
+
   private sign(payload: Record<string, unknown>): string {
     const secret = this.config.get<string>('CERTIFICATE_SIGNING_SECRET') ?? this.config.get<string>('JWT_SECRET') ?? 'dev-secret-change-me';
     return createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
