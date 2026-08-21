@@ -46,10 +46,40 @@ export class RequestsService {
   async list(user: AuthenticatedUser, filters: Record<string, string | undefined>) {
     const page = Math.max(Number(filters.page ?? 1), 1);
     const limit = Math.min(Math.max(Number(filters.limit ?? 20), 1), 100);
+
+    let roleWhere: any = {};
+    if (user.role === 'student') {
+      roleWhere = { userId: user.id };
+    } else if (user.role === 'admin') {
+      roleWhere = {};
+    } else if (user.role === 'warden') {
+      roleWhere = {
+        OR: [
+          { departmentId: user.department_id },
+          { requestType: { name: { in: ['maintenance', 'hostel_maintenance', 'hostel'] } } },
+          { departmentId: null },
+        ],
+      };
+    } else if (user.role === 'lab_incharge') {
+      roleWhere = {
+        OR: [
+          { departmentId: user.department_id },
+          { requestType: { name: { in: ['lab_booking', 'seminar_hall', 'facility'] } } },
+          { departmentId: null },
+        ],
+      };
+    } else {
+      const isAcademicDept = !user.department_id || user.department_id === 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      roleWhere = isAcademicDept
+        ? {}
+        : { OR: [{ departmentId: user.department_id }, { departmentId: null }] };
+    }
+
     const where = {
-      ...(user.role === 'student' ? { userId: user.id } : { departmentId: user.department_id }),
+      ...roleWhere,
       ...(filters.status ? { status: filters.status } : {}),
     };
+
     const [items, total] = await this.prisma.$transaction([
       this.prisma.serviceRequest.findMany({
         where,
@@ -79,7 +109,13 @@ export class RequestsService {
   async getDetail(id: string, user: AuthenticatedUser) {
     const request = await this.prisma.serviceRequest.findUnique({
       where: { id },
-      include: { requestType: true, workflowSteps: { orderBy: { createdAt: 'asc' } } },
+      include: {
+        requestType: true,
+        workflowSteps: {
+          include: { approvals: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
     });
     if (!request) {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Request not found' });
@@ -96,12 +132,22 @@ export class RequestsService {
       sla_due_at: request.slaDueAt,
       department_id: request.departmentId,
       session_id: request.sessionId,
-      timeline: request.workflowSteps.map((step) => ({
-        step_name: step.stepName,
-        risk_level: step.riskLevel,
-        status: step.status,
-        executed_at: step.executedAt,
-      })),
+      timeline: request.workflowSteps.map((step) => {
+        const latestApproval = step.approvals[step.approvals.length - 1];
+        return {
+          id: step.id,
+          step_name: step.stepName,
+          tool_name: step.toolName,
+          risk_level: step.riskLevel,
+          status: step.status,
+          rationale: step.rationale,
+          executed_at: step.executedAt,
+          created_at: step.createdAt,
+          question: latestApproval?.question,
+          reason: latestApproval?.reason,
+          decision: latestApproval?.decision,
+        };
+      }),
     };
   }
 

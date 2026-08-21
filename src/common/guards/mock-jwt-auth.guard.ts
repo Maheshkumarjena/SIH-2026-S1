@@ -23,6 +23,22 @@ export class MockJwtAuthGuard implements CanActivate {
       user?: AuthenticatedUser;
     }>();
 
+    const userId = request.headers['x-user-id'];
+    const role = request.headers['x-user-role'] as Role | undefined;
+    const departmentId = request.headers['x-department-id'];
+    const language = request.headers['x-preferred-language'] as SupportedLanguage | undefined;
+
+    if (userId && role && departmentId) {
+      request.user = {
+        id: userId,
+        role,
+        department_id: departmentId,
+        preferred_language: language ?? 'en',
+      };
+      this.assertRoleAllowed(context, request.user);
+      return true;
+    }
+
     const token = this.extractToken(request.headers, request.cookies);
     if (token) {
       try {
@@ -45,23 +61,7 @@ export class MockJwtAuthGuard implements CanActivate {
       }
     }
 
-    const userId = request.headers['x-user-id'];
-    const role = request.headers['x-user-role'] as Role | undefined;
-    const departmentId = request.headers['x-department-id'];
-    const language = request.headers['x-preferred-language'] as SupportedLanguage | undefined;
-
-    if (!userId || !role || !departmentId) {
-      throw new UnauthorizedException({ code: 'UNAUTHORIZED', message: 'Missing authenticated user context' });
-    }
-
-    request.user = {
-      id: userId,
-      role,
-      department_id: departmentId,
-      preferred_language: language ?? 'en',
-    };
-    this.assertRoleAllowed(context, request.user);
-    return true;
+    throw new UnauthorizedException({ code: 'UNAUTHORIZED', message: 'Missing authenticated user context' });
   }
 
   private assertRoleAllowed(context: ExecutionContext, user: AuthenticatedUser): void {

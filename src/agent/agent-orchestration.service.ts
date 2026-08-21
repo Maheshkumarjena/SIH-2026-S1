@@ -232,6 +232,7 @@ export class AgentOrchestrationService implements OnModuleInit {
 
   private async detectLanguageNode(state: AgentGraphState): Promise<Partial<AgentGraphState>> {
     console.log(`[LangGraph Node: detect_language] 🌐 Detecting language for input: "${state.raw_input.slice(0, 50)}"`);
+    this.emitProgress(state.session_id, 'detect_language', 'Detecting input language & user preferences...', 0, 10);
     const detected_language = await this.nlu.detectLanguage(state.raw_input, state.session_id);
     await this.audit.append('agent_sessions', state.session_id, 'N1.language_detection', 'agent', {
       detected_language,
@@ -242,6 +243,7 @@ export class AgentOrchestrationService implements OnModuleInit {
 
   private async identityCheckNode(state: AgentGraphState): Promise<Partial<AgentGraphState>> {
     console.log(`[LangGraph Node: identity_check] 🛡️ Verifying user identity: ${state.user.id} (${state.user.role})`);
+    this.emitProgress(state.session_id, 'identity_check', `Verifying identity & role permissions (${state.user.role})...`, 1, 10);
     await this.audit.append('agent_sessions', state.session_id, 'N2.identity_check', 'agent', {
       user_id: state.user.id,
       role: state.user.role,
@@ -252,12 +254,14 @@ export class AgentOrchestrationService implements OnModuleInit {
 
   private async classifyIntentNode(state: AgentGraphState): Promise<Partial<AgentGraphState>> {
     console.log(`[LangGraph Node: classify_intent] 🎯 Classifying intent & extracting entities`);
+    this.emitProgress(state.session_id, 'classify_intent', 'Classifying request intent & extracting key parameters...', 2, 10);
     const result = await this.nlu.classifyAndExtract(state.raw_input, state.session_id);
     await this.audit.append('agent_sessions', state.session_id, 'N3.intent_classification', 'agent', {
       intent: result.intent,
       entities: result.entities,
     });
     console.log(`[LangGraph Node: classify_intent] ✅ Intent classified: '${result.intent}'`);
+    this.emitProgress(state.session_id, 'classify_intent', `Intent identified: ${result.intent.replace(/_/g, ' ')}`, 2, 10, { intent: result.intent });
     return {
       intent: result.intent,
       entities: result.entities,
@@ -266,6 +270,7 @@ export class AgentOrchestrationService implements OnModuleInit {
 
   private async guardrailInputScreenNode(state: AgentGraphState): Promise<Partial<AgentGraphState>> {
     console.log(`[LangGraph Node: guardrail_input_screen] 🔍 Screening user input against guardrails`);
+    this.emitProgress(state.session_id, 'guardrail_input_screen', 'Screening input prompt against safety & security guardrails...', 3, 10);
     const flags = this.guardrails.screenUserInput(state.raw_input);
     await this.audit.append('agent_sessions', state.session_id, 'N4.guardrail_input_screen', 'agent', { flags });
     return {
@@ -275,6 +280,7 @@ export class AgentOrchestrationService implements OnModuleInit {
 
   private async retrieveNode(state: AgentGraphState): Promise<Partial<AgentGraphState>> {
     console.log(`[LangGraph Node: retrieve] 📚 Running Hybrid Retrieval (pgvector + tsvector) & Groq Reranker (top-12 -> top-6)`);
+    this.emitProgress(state.session_id, 'retrieve', 'Searching campus knowledge base & policy records...', 4, 10);
     const query = `${state.raw_input} ${JSON.stringify(state.entities)}`;
     const retrieved_chunks = await this.retrieval.search(query, 6, state.session_id);
     await this.audit.append('agent_sessions', state.session_id, 'N5.hybrid_retrieval_and_rerank', 'agent', {
@@ -290,11 +296,13 @@ export class AgentOrchestrationService implements OnModuleInit {
       })),
     });
     console.log(`[LangGraph Node: retrieve] ✅ Selected ${retrieved_chunks.length} reranked chunks`);
+    this.emitProgress(state.session_id, 'retrieve', `Retrieved ${retrieved_chunks.length} institutional policy documents`, 4, 10, { count: retrieved_chunks.length });
     return { retrieved_chunks };
   }
 
   private async guardrailDocScreenNode(state: AgentGraphState): Promise<Partial<AgentGraphState>> {
     console.log(`[LangGraph Node: guardrail_doc_screen] 🔍 Screening retrieved document chunks`);
+    this.emitProgress(state.session_id, 'guardrail_doc_screen', 'Validating retrieved documents for clearance & confidentiality...', 5, 10);
     const flags = this.guardrails.screenRetrievedChunks(state.retrieved_chunks);
     await this.audit.append('agent_sessions', state.session_id, 'N6.guardrail_doc_screen', 'agent', { flags });
     return {
@@ -314,6 +322,14 @@ export class AgentOrchestrationService implements OnModuleInit {
     const sufficient = retrieval_confidence >= threshold;
 
     console.log(`[LangGraph Node: confidence_evaluator] 📊 Confidence score: ${retrieval_confidence.toFixed(2)} (Threshold: ${threshold}) -> ${sufficient ? 'PASS' : 'FAIL'}`);
+    this.emitProgress(
+      state.session_id,
+      'confidence_evaluator',
+      `Document evidence confidence: ${Math.round(retrieval_confidence * 100)}% (${sufficient ? 'Sufficient' : 'Below threshold'})`,
+      6,
+      10,
+      { confidence: retrieval_confidence, threshold, sufficient },
+    );
 
     await this.audit.append('agent_sessions', state.session_id, 'N7.confidence_decision', 'agent', {
       confidence: retrieval_confidence,
@@ -342,6 +358,7 @@ export class AgentOrchestrationService implements OnModuleInit {
 
   private async generatePlanNode(state: AgentGraphState): Promise<Partial<AgentGraphState>> {
     console.log(`[LangGraph Node: generate_plan] 📋 Generating execution plan and persisting request`);
+    this.emitProgress(state.session_id, 'generate_plan', 'Formulating multi-step tool execution plan...', 7, 10);
     const plan = await this.planner.generatePlan(state as AgentState);
     const requestType = this.intentToRequestType(state.intent);
     const request = await this.requests.create(state.user.id, {
@@ -380,6 +397,7 @@ export class AgentOrchestrationService implements OnModuleInit {
       steps: updatedPlan,
     });
     this.emitPlanUpdate(state.session_id, persisted);
+    this.emitProgress(state.session_id, 'generate_plan', `Plan formulated with ${updatedPlan.length} step(s)`, 7, 10, { steps_count: updatedPlan.length });
     console.log(`[LangGraph Node: generate_plan] ✅ Plan generated with ${updatedPlan.length} steps`);
     return { plan: updatedPlan };
   }
@@ -466,6 +484,7 @@ export class AgentOrchestrationService implements OnModuleInit {
 
   private async stepLoopNode(state: AgentGraphState): Promise<Partial<AgentGraphState>> {
     console.log(`[LangGraph Node: step_loop] ⚙️ Executing workflow steps`);
+    this.emitProgress(state.session_id, 'step_loop', 'Starting tool execution steps...', 8, 10);
     const steps = await this.prisma.workflowStep.findMany({
       where: { sessionId: state.session_id },
       orderBy: { createdAt: 'asc' },
@@ -474,7 +493,7 @@ export class AgentOrchestrationService implements OnModuleInit {
     let currentStepIndex = state.current_step_index;
     const additionalFlags: GuardrailFlag[] = [];
 
-    for (const step of steps) {
+    for (const [idx, step] of steps.entries()) {
       if (['done', 'failed', 'rejected'].includes(step.status)) {
         continue;
       }
@@ -483,6 +502,14 @@ export class AgentOrchestrationService implements OnModuleInit {
 
       if (step.riskLevel === 'low') {
         console.log(`[LangGraph Node: step_loop] 🟢 Executing low-risk tool: ${step.toolName}`);
+        this.emitProgress(
+          state.session_id,
+          'step_loop',
+          `Executing step ${idx + 1}/${steps.length}: ${step.stepName}`,
+          8 + idx,
+          8 + steps.length,
+          { tool_name: step.toolName, step_name: step.stepName, risk_level: step.riskLevel },
+        );
         const flags = this.guardrails.screenToolArgs(this.dbStepToPlanStep(step));
         additionalFlags.push(...flags);
         await this.tools.execute(
@@ -496,11 +523,27 @@ export class AgentOrchestrationService implements OnModuleInit {
           },
           'low',
         );
+        this.emitProgress(
+          state.session_id,
+          'step_loop',
+          `Completed step ${idx + 1}/${steps.length}: ${step.stepName}`,
+          8 + idx + 1,
+          8 + steps.length,
+          { tool_name: step.toolName, step_name: step.stepName, status: 'done' },
+        );
         continue;
       }
 
       // Medium / High risk: requires approval
       console.log(`[LangGraph Node: step_loop] 🟡 High/Medium risk step encountered (${step.toolName}) -> Pausing for staff approval`);
+      this.emitProgress(
+        state.session_id,
+        'step_loop',
+        `Step ${idx + 1}/${steps.length} (${step.stepName}) requires staff approval - pausing execution`,
+        8 + idx,
+        8 + steps.length,
+        { tool_name: step.toolName, step_name: step.stepName, risk_level: step.riskLevel, awaiting_approval: true },
+      );
       const approval = await this.approvals.createForStep(step.id, {
         original_request: state.raw_input,
         retrieved_evidence: state.retrieved_chunks,
@@ -628,6 +671,26 @@ export class AgentOrchestrationService implements OnModuleInit {
         status: step.status,
         rationale: step.rationale,
       })),
+    });
+  }
+
+  private emitProgress(
+    sessionId: string,
+    stage: string,
+    message: string,
+    stepIndex: number = 0,
+    totalSteps: number = 10,
+    details?: Record<string, unknown>,
+  ): void {
+    this.events.emitToSession(sessionId, 'agent.progress', {
+      session_id: sessionId,
+      stage,
+      message,
+      step_index: stepIndex,
+      total_steps: totalSteps,
+      progress_percent: Math.min(100, Math.round(((stepIndex + 1) / totalSteps) * 100)),
+      timestamp: new Date().toISOString(),
+      ...(details ?? {}),
     });
   }
 

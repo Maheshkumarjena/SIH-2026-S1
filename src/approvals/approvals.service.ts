@@ -32,6 +32,20 @@ export class ApprovalsService {
       where: { id: workflowStepId },
       data: { status: 'awaiting_approval' },
     });
+    if (approval.workflowStep.requestId) {
+      await this.prisma.serviceRequest.update({
+        where: { id: approval.workflowStep.requestId },
+        data: { status: 'awaiting_approval' },
+      });
+    }
+    const studentUserId = approval.workflowStep.request?.userId;
+    if (studentUserId) {
+      this.events.emitToUser(studentUserId, 'status.changed', {
+        entity_type: 'request',
+        entity_id: approval.workflowStep.requestId,
+        new_status: 'awaiting_approval',
+      });
+    }
     await this.audit.append('agent_sessions', approval.workflowStep.sessionId, 'N13.approval_creation', 'agent', {
       approval_id: approval.id,
       workflow_step_id: workflowStepId,
@@ -50,12 +64,53 @@ export class ApprovalsService {
     if (!['staff', 'admin', 'warden', 'lab_incharge'].includes(user.role)) {
       throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Approvals require staff access' });
     }
-    const items = await this.prisma.approval.findMany({
+    const allPending = await this.prisma.approval.findMany({
       where: { decision: null },
-      include: { workflowStep: { include: { request: true } } },
+      include: {
+        workflowStep: {
+          include: {
+            request: {
+              include: {
+                requestType: true,
+              },
+            },
+          },
+        },
+      },
       orderBy: { createdAt: 'asc' },
     });
-    return { items };
+
+    const filtered = allPending.filter((item) => {
+      if (user.role === 'admin') return true;
+
+      const toolName = item.workflowStep?.toolName ?? '';
+      const reqType = item.workflowStep?.request?.requestType?.name ?? '';
+      const reqDeptId = item.workflowStep?.request?.departmentId;
+
+      if (user.role === 'warden') {
+        if (['issue_certificate', 'book_lab_slot', 'check_lab_availability'].includes(toolName)) return false;
+        if (['certificate', 'lab_booking'].includes(reqType)) return false;
+        return true;
+      }
+
+      if (user.role === 'lab_incharge') {
+        if (['issue_certificate'].includes(toolName)) return false;
+        if (['certificate', 'hostel_maintenance'].includes(reqType)) return false;
+        return true;
+      }
+
+      if (user.role === 'staff') {
+        const isAcademicDept = !user.department_id || user.department_id === 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+        if (!isAcademicDept && reqDeptId && reqDeptId !== user.department_id) {
+          return false;
+        }
+        return true;
+      }
+
+      return true;
+    });
+
+    return { items: filtered };
   }
 
   async approve(id: string, reviewer: AuthenticatedUser) {
@@ -117,6 +172,20 @@ export class ApprovalsService {
       where: { id: approval.workflowStep.id },
       data: { status: 'rejected' },
     });
+    if (approval.workflowStep.requestId) {
+      await this.prisma.serviceRequest.update({
+        where: { id: approval.workflowStep.requestId },
+        data: { status: 'rejected', resolvedAt: new Date() },
+      });
+    }
+    const studentUserId = approval.workflowStep.request?.userId;
+    if (studentUserId) {
+      this.events.emitToUser(studentUserId, 'status.changed', {
+        entity_type: 'request',
+        entity_id: approval.workflowStep.requestId,
+        new_status: 'rejected',
+      });
+    }
     await this.notifications.create(approval.workflowStep.request.userId, {
       title: 'Approval rejected',
       body: reason,
@@ -136,17 +205,49 @@ export class ApprovalsService {
       where: { id: approval.workflowStep.id },
       data: { status: 'info_requested' },
     });
+    if (approval.workflowStep.requestId) {
+      await this.prisma.serviceRequest.update({
+        where: { id: approval.workflowStep.requestId },
+        data: { status: 'info_requested' },
+      });
+    }
+    const studentUserId = approval.workflowStep.request?.userId;
     const message = await this.prisma.agentMessage.create({
       data: {
         sessionId: approval.workflowStep.sessionId,
         sender: 'agent',
-        content: question,
+        content: `Staff requested clarification: "${question}"`,
         citedChunkIds: [],
       },
     });
+
+    if (studentUserId) {
+      await this.notifications.create(studentUserId, {
+        title: 'Staff requested additional information',
+        body: question,
+        deepLink: `/chat?session=${approval.workflowStep.sessionId}`,
+      });
+      this.events.emitToUser(studentUserId, 'notification.new', {
+        title: 'Staff requested additional information',
+        body: question,
+        deepLink: `/chat?session=${approval.workflowStep.sessionId}`,
+      });
+      this.events.emitToUser(studentUserId, 'status.changed', {
+        entity_type: 'request',
+        entity_id: approval.workflowStep.requestId,
+        new_status: 'info_requested',
+      });
+    }
+
     this.events.emitToSession(approval.workflowStep.sessionId, 'message.complete', {
       session_id: approval.workflowStep.sessionId,
       message,
+    });
+    this.events.emitToSession(approval.workflowStep.sessionId, 'approval.status', {
+      session_id: approval.workflowStep.sessionId,
+      approval_id: id,
+      status: 'info_requested',
+      question,
     });
     await this.audit.append('agent_sessions', approval.workflowStep.sessionId, 'N14.request_info', reviewer.id, {
       approval_id: id,
@@ -229,7 +330,21 @@ export class ApprovalsService {
 
     const lastRequest = steps[0]?.request;
     if (lastRequest) {
+      await this.prisma.serviceRequest.update({
+        where: { id: lastRequest.id },
+        data: { status: 'completed', resolvedAt: new Date() },
+      });
       await this.notifications.create(lastRequest.userId, {
+        title: 'Agent request completed',
+        body: 'The approved action has been completed.',
+        deepLink: `/chat?session=${sessionId}`,
+      });
+      this.events.emitToUser(lastRequest.userId, 'status.changed', {
+        entity_type: 'request',
+        entity_id: lastRequest.id,
+        new_status: 'completed',
+      });
+      this.events.emitToUser(lastRequest.userId, 'notification.new', {
         title: 'Agent request completed',
         body: 'The approved action has been completed.',
         deepLink: `/chat?session=${sessionId}`,
@@ -238,7 +353,7 @@ export class ApprovalsService {
         data: {
           sessionId,
           sender: 'agent',
-          content: 'The staff-approved action is complete. Your request has been updated.',
+          content: 'The staff-approved action is complete. Your request has been updated to completed.',
           confidenceScore: null,
           citedChunkIds: [],
         },

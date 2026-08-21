@@ -54,8 +54,23 @@ export class GrievancesService {
   async list(user: AuthenticatedUser, filters: Record<string, string | undefined>) {
     const page = Math.max(Number(filters.page ?? 1), 1);
     const limit = Math.min(Math.max(Number(filters.limit ?? 20), 1), 100);
+
+    let roleWhere: any = {};
+    if (user.role === 'student') {
+      roleWhere = { ownerUserId: user.id };
+    } else if (user.role === 'admin') {
+      roleWhere = {};
+    } else if (user.role === 'warden') {
+      roleWhere = { category: { in: ['hostel_maintenance', 'hostel', 'facility'] } };
+    } else if (user.role === 'lab_incharge') {
+      roleWhere = { category: { in: ['lab_resources', 'lab_equipment', 'lab', 'facility'] } };
+    } else if (user.role === 'staff') {
+      roleWhere = { category: { in: ['academic_evaluation', 'fee_dispute', 'academic', 'administrative'] } };
+    }
+
     const where = {
-      ...(user.role === 'student' ? { ownerUserId: user.id } : {}),
+      ...roleWhere,
+      ...(filters.category ? { category: filters.category } : {}),
       ...(filters.status ? { status: filters.status } : {}),
       ...(filters.escalation_level ? { escalationLevel: Number(filters.escalation_level) } : {}),
     };
