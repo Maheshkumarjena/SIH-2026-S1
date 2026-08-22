@@ -13,7 +13,8 @@ export class GrievancesController {
 
   @Post()
   async file(@CurrentUser() user: AuthenticatedUser, @Body() dto: FileGrievanceDto): Promise<unknown> {
-    console.log(`[GrievancesController.file] 📢 User ${user.id} (${user.role}) filing grievance (Category: ${dto.category}, Anonymous: ${dto.anonymous})`);
+    const isAnonymous = Boolean(dto.anonymous ?? dto.is_anonymous ?? false);
+    console.log(`[GrievancesController.file] 📢 User ${user.id} (${user.role}) filing grievance (Category: ${dto.category}, Anonymous: ${isAnonymous})`);
     const result = await this.grievances.file(user, dto);
     console.log(`[GrievancesController.file] ✅ Grievance filed successfully:`, (result as { id?: string })?.id ?? 'done');
     return result;

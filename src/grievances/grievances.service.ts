@@ -37,15 +37,16 @@ export class GrievancesService {
     this.db = prisma as unknown as GrievancePrisma;
   }
 
-  async file(user: AuthenticatedUser, dto: { category: string; description: string; anonymous: boolean }) {
+  async file(user: AuthenticatedUser, dto: { category: string; description: string; anonymous?: boolean; is_anonymous?: boolean }) {
+    const isAnonymous = Boolean(dto.anonymous ?? dto.is_anonymous ?? false);
     const slaDueAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     return this.db.grievance.create({
       data: {
-        userId: dto.anonymous ? null : user.id,
+        userId: isAnonymous ? null : user.id,
         ownerUserId: user.id,
         category: dto.category,
         description: dto.description,
-        anonymous: dto.anonymous,
+        anonymous: isAnonymous,
         slaDueAt,
       },
     });
